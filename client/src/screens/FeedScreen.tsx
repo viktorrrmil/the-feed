@@ -238,10 +238,7 @@ function FeedScreen({
   return (
     <main className="screen feed-screen">
       <div className="feed-shell">
-        <div className="walking-bg" aria-hidden>
-          <div className="parallax-layer slow" />
-          <div className="parallax-layer fast" />
-        </div>
+        <div className="walking-bg" aria-hidden />
 
         <section className="phone-frame">
           <header className="phone-status">

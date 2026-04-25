@@ -101,68 +101,68 @@ h1 {
 
 .feed-shell {
   position: relative;
-  width: min(780px, 100%);
+  width: 100%;
   display: flex;
   justify-content: center;
+  align-items: center;
+  isolation: isolate;
+  z-index: 2;
 }
 
 .walking-bg {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  border-radius: 28px;
-  overflow: hidden;
   z-index: 0;
-  background:
-    repeating-conic-gradient(from 45deg, #26163d 0 25%, #1a0d2b 0 50%) 0 0 / 6px 6px,
-    #120b1f;
+  overflow: hidden;
+  background: #5d775e;
+  filter: blur(2px) saturate(0.9) brightness(0.96);
+  transform: scale(1.02);
+  pointer-events: none;
 }
 
-.parallax-layer {
+.walking-bg::before,
+.walking-bg::after {
+  content: '';
   position: absolute;
-  left: -60%;
-  width: 220%;
-  height: 40%;
-  opacity: 0.8;
-  background-repeat: repeat-x;
+  pointer-events: none;
+  image-rendering: pixelated;
 }
 
-.parallax-layer.slow {
-  bottom: 23%;
+.walking-bg::before {
+  inset: -5% 0;
+  clip-path: polygon(45% 0, 55% 0, 69% 100%, 31% 100%);
+  background: #70757b;
   background-image:
-    linear-gradient(
+    repeating-linear-gradient(
       180deg,
-      rgba(84, 61, 126, 0.55),
-      rgba(84, 61, 126, 0.55)
+      transparent 0 254px,
+      rgba(43, 47, 52, 0.52) 254px 256px
     ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(88, 65, 126, 0.72) 0 70px,
-      rgba(67, 44, 103, 0.72) 70px 140px
-    );
-  animation: parallax-walk 16s linear infinite;
+    radial-gradient(circle at 24% 22%, rgba(95, 101, 108, 0.22) 0 16px, transparent 17px),
+    radial-gradient(circle at 74% 66%, rgba(86, 93, 100, 0.2) 0 14px, transparent 15px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.06));
+  background-size:
+    100% 256px,
+    100% 320px,
+    100% 320px,
+    100% 100%;
+  background-position:
+    0 0,
+    0 0,
+    0 0,
+    0 0;
+  animation: world-scroll-path 6.6s linear infinite;
+  box-shadow: inset 2px 0 0 #2a2e33, inset -2px 0 0 #2a2e33;
+  will-change: background-position;
 }
 
-.parallax-layer.fast {
-  bottom: 0;
-  height: 28%;
-  background-image:
-    repeating-linear-gradient(
-      90deg,
-      rgba(240, 220, 140, 0.18) 0 1px,
-      transparent 1px 42px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(240, 220, 140, 0.18) 0 1px,
-      transparent 1px 42px
-    );
-  background-size: auto, 42px 42px;
-  animation: parallax-walk 7s linear infinite;
+.walking-bg::after {
+  display: none;
 }
 
 .phone-frame {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   width: min(420px, 100%);
   height: 78vh;
   min-height: 620px;
@@ -354,11 +354,19 @@ h1 {
   }
 }
 
-@keyframes parallax-walk {
+@keyframes world-scroll-path {
   0% {
-    transform: translateX(0);
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0;
   }
   100% {
-    transform: translateX(-30%);
+    background-position:
+      0 256px,
+      0 320px,
+      0 320px,
+      0 0;
   }
 }
