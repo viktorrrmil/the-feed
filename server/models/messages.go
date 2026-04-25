@@ -13,3 +13,13 @@ type StateUpdate struct {
 	Type  string          `json:"type"`
 	State *game.GameState `json:"state"`
 }
+
+type FeedPostMessage struct {
+	Type string         `json:"type"`
+	Post *game.FeedPost `json:"post"`
+}
+
+type ErrorMessage struct {
+	Type  string `json:"type"`
+	Error string `json:"error"`
+}

@@ -9,16 +9,29 @@ import { useGameSocket } from './useGameSocket'
 
 export const useGameState = () => {
   const [state, dispatch] = useReducer(gameReducer, initialGameState)
-  const { status, sendMessage } = useGameSocket(
-    state.sessionId,
-    (message: SocketMessage) => {
-      dispatch({ type: 'SOCKET_MESSAGE', payload: message })
-    },
-  )
+  const handleSocketMessage = useCallback((message: SocketMessage) => {
+    dispatch({ type: 'SOCKET_MESSAGE', payload: message })
+  }, [])
+  const { status, sendMessage } = useGameSocket(state.sessionId, handleSocketMessage)
 
   useEffect(() => {
     dispatch({ type: 'SOCKET_STATUS', payload: status })
   }, [status])
+
+  const scrollFeed = useCallback((): boolean => {
+    const sent = sendMessage({ type: 'SCROLL' })
+    if (!sent) {
+      dispatch({
+        type: 'FEED_SCROLL_FAILURE',
+        payload: 'Feed scroll failed: socket is not connected',
+      })
+    }
+    return sent
+  }, [sendMessage])
+
+  const advanceFeed = useCallback(() => {
+    dispatch({ type: 'FEED_ADVANCE' })
+  }, [])
 
   const createSession = useCallback(async () => {
     dispatch({ type: 'SESSION_CREATE_REQUEST' })
@@ -44,5 +57,7 @@ export const useGameState = () => {
     socketStatus: state.socketStatus,
     sendMessage,
     createSession,
+    scrollFeed,
+    advanceFeed,
   }
 }

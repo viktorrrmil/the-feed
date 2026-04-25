@@ -1,16 +1,17 @@
 package game
 
 type GameState struct {
-	SessionID    string       `json:"sessionId"`
-	Phase        string       `json:"phase"`
-	Score        int          `json:"score"`
-	Attention    int          `json:"attention"`
-	MaxAttention int          `json:"maxAttention"`
-	Noise        int          `json:"noise"`
-	Exploits     [4]*Exploit  `json:"exploits"`
-	Inventory    []*Exploit   `json:"inventory"`
-	Items        []*Item      `json:"items"`
-	Combat       *CombatState `json:"combat"`
+	SessionID       string       `json:"sessionId"`
+	Phase           string       `json:"phase"`
+	Score           int          `json:"score"`
+	Attention       int          `json:"attention"`
+	MaxAttention    int          `json:"maxAttention"`
+	Noise           int          `json:"noise"`
+	DefeatedEnemies []string     `json:"defeatedEnemies"`
+	Exploits        [4]*Exploit  `json:"exploits"`
+	Inventory       []*Exploit   `json:"inventory"`
+	Items           []*Item      `json:"items"`
+	Combat          *CombatState `json:"combat"`
 }
 
 type CombatState struct {
@@ -50,13 +51,14 @@ type Item struct {
 
 func NewGameState(sessionID string) *GameState {
 	return &GameState{
-		SessionID:    sessionID,
-		Phase:        "feed",
-		Score:        0,
-		Attention:    100,
-		MaxAttention: 100,
-		Noise:        1,
-		Inventory:    []*Exploit{},
-		Items:        []*Item{},
+		SessionID:       sessionID,
+		Phase:           "feed",
+		Score:           0,
+		Attention:       100,
+		MaxAttention:    100,
+		Noise:           1,
+		DefeatedEnemies: []string{},
+		Inventory:       []*Exploit{},
+		Items:           []*Item{},
 	}
 }

@@ -25,12 +25,16 @@ export const useGameSocket = (
 ) => {
   const [status, setStatus] = useState<SocketStatus>('disconnected')
   const socketRef = useRef<WebSocket | null>(null)
-  const connectRef = useRef<(() => void) | null>(null)
+  const onMessageRef = useRef(onMessage)
   const reconnectRef = useRef<ReconnectState>({
     attempt: 0,
     timeoutId: null,
     manualClose: false,
   })
+
+  useEffect(() => {
+    onMessageRef.current = onMessage
+  }, [onMessage])
 
   const clearReconnect = useCallback(() => {
     if (reconnectRef.current.timeoutId) {
@@ -39,82 +43,92 @@ export const useGameSocket = (
     }
   }, [])
 
-  const scheduleReconnect = useCallback(() => {
-    clearReconnect()
-    const attempt = reconnectRef.current.attempt + 1
-    reconnectRef.current.attempt = attempt
-    const delay = Math.min(1000 * 2 ** attempt, MAX_RECONNECT_DELAY)
-    setStatus('reconnecting')
-    reconnectRef.current.timeoutId = window.setTimeout(() => {
-      connectRef.current?.()
-    }, delay)
-  }, [clearReconnect])
-
-  const connect = useCallback(() => {
-    if (!sessionId) {
-      return
-    }
-
-    const socket = new WebSocket(buildSocketUrl(sessionId))
-    socketRef.current = socket
-
-    socket.onopen = () => {
-      reconnectRef.current.attempt = 0
-      setStatus('connected')
-    }
-
-    socket.onmessage = (event) => {
-      if (!onMessage) {
-        return
-      }
-
-      try {
-        const payload = JSON.parse(event.data) as unknown
-        if (payload && typeof payload === 'object') {
-          onMessage(payload as SocketMessage)
-        }
-      } catch (error) {
-        console.error('WS message parse failed', error)
-      }
-    }
-
-    socket.onerror = (event) => {
-      console.error('WS error', event)
-      setStatus('error')
-    }
-
-    socket.onclose = () => {
-      socketRef.current = null
-      if (reconnectRef.current.manualClose) {
-        setStatus('disconnected')
-        return
-      }
-      scheduleReconnect()
-    }
-  }, [onMessage, scheduleReconnect, sessionId])
-
-  useEffect(() => {
-    connectRef.current = connect
-  }, [connect])
-
   useEffect(() => {
     if (!sessionId) {
       return
     }
 
+    let isActive = true
     const reconnectState = reconnectRef.current
-    reconnectRef.current.manualClose = false
-    reconnectRef.current.attempt = 0
+
+    const connect = () => {
+      if (!isActive) {
+        return
+      }
+
+      const socket = new WebSocket(buildSocketUrl(sessionId))
+      socketRef.current = socket
+
+      socket.onopen = () => {
+        if (!isActive || socketRef.current !== socket) {
+          return
+        }
+        reconnectState.attempt = 0
+        setStatus('connected')
+      }
+
+      socket.onmessage = (event) => {
+        if (!isActive || !onMessageRef.current) {
+          return
+        }
+
+        try {
+          const payload = JSON.parse(event.data) as unknown
+          if (payload && typeof payload === 'object') {
+            onMessageRef.current(payload as SocketMessage)
+          }
+        } catch (error) {
+          console.error('WS message parse failed', error)
+        }
+      }
+
+      socket.onerror = (event) => {
+        if (!isActive || socketRef.current !== socket) {
+          return
+        }
+        console.error('WS error', event)
+        setStatus('error')
+      }
+
+      socket.onclose = () => {
+        if (socketRef.current !== socket) {
+          return
+        }
+
+        socketRef.current = null
+        if (reconnectState.manualClose) {
+          setStatus('disconnected')
+          return
+        }
+        if (!isActive) {
+          return
+        }
+
+        clearReconnect()
+        const attempt = reconnectState.attempt + 1
+        reconnectState.attempt = attempt
+        const delay = Math.min(1000 * 2 ** attempt, MAX_RECONNECT_DELAY)
+        setStatus('reconnecting')
+        reconnectState.timeoutId = window.setTimeout(() => {
+          connect()
+        }, delay)
+      }
+    }
+
+    reconnectState.manualClose = false
+    reconnectState.attempt = 0
     connect()
 
     return () => {
+      isActive = false
       reconnectState.manualClose = true
       clearReconnect()
-      if (socketRef.current) {
-        socketRef.current.close(1000, 'client shutdown')
+      const activeSocket = socketRef.current
+      if (activeSocket) {
+        activeSocket.close(1000, 'client shutdown')
       }
     }
-  }, [clearReconnect, connect, sessionId])
+  }, [clearReconnect, sessionId])
 
   const sendMessage = useCallback((payload: unknown): boolean => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {

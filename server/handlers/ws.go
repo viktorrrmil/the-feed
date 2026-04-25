@@ -39,7 +39,7 @@ func HandleWebSocket(c *gin.Context) {
 
 	if err := conn.WriteJSON(models.StateUpdate{
 		Type:  "STATE_UPDATE",
-		State: session.State,
+		State: session.SnapshotState(),
 	}); err != nil {
 		log.Printf("ws initial state send failed: %v", err)
 		return
@@ -50,6 +50,45 @@ func HandleWebSocket(c *gin.Context) {
 		if err := conn.ReadJSON(&incoming); err != nil {
 			log.Printf("ws read failed: %v", err)
 			return
+		}
+
+		switch incoming.Type {
+		case "SCROLL":
+			post, state, err := session.ScrollFeed()
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+
+			if err := conn.WriteJSON(models.FeedPostMessage{
+				Type: "FEED_POST",
+				Post: post,
+			}); err != nil {
+				log.Printf("ws feed post send failed: %v", err)
+				return
+			}
+
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws state update send failed: %v", err)
+				return
+			}
+		default:
+			if err := conn.WriteJSON(models.ErrorMessage{
+				Type:  "ERROR",
+				Error: "unsupported message type",
+			}); err != nil {
+				log.Printf("ws unsupported message error send failed: %v", err)
+				return
+			}
 		}
 	}
 }

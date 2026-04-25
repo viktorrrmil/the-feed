@@ -8,17 +8,25 @@ function App() {
     sessionId,
     serverState,
     socketStatus,
+    feedPosts,
     isCreatingSession,
     error,
     createSession,
+    scrollFeed,
+    advanceFeed,
   } = useGameState()
 
   if (phase === 'feed') {
+    const score = typeof serverState?.score === 'number' ? serverState.score : 0
     return (
       <FeedScreen
         sessionId={sessionId}
         serverState={serverState}
         socketStatus={socketStatus}
+        posts={feedPosts}
+        score={score}
+        onScroll={scrollFeed}
+        onAdvance={advanceFeed}
       />
     )
   }
