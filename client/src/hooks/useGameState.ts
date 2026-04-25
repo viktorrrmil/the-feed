@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useReducer } from 'react'
-import { gameReducer, initialGameState } from '../store/gameReducer.js'
-import { useGameSocket } from './useGameSocket.js'
+import {
+  gameReducer,
+  initialGameState,
+  type SessionCreateResponse,
+  type SocketMessage,
+} from '../store/gameReducer'
+import { useGameSocket } from './useGameSocket'
 
 export const useGameState = () => {
   const [state, dispatch] = useReducer(gameReducer, initialGameState)
-  const { status, sendMessage } = useGameSocket(state.sessionId, (message) => {
-    dispatch({ type: 'SOCKET_MESSAGE', payload: message })
-  })
+  const { status, sendMessage } = useGameSocket(
+    state.sessionId,
+    (message: SocketMessage) => {
+      dispatch({ type: 'SOCKET_MESSAGE', payload: message })
+    },
+  )
 
   useEffect(() => {
     dispatch({ type: 'SOCKET_STATUS', payload: status })
@@ -20,7 +28,7 @@ export const useGameState = () => {
       if (!response.ok) {
         throw new Error(`Failed to create session (${response.status})`)
       }
-      const data = await response.json()
+      const data = (await response.json()) as SessionCreateResponse
       dispatch({ type: 'SESSION_CREATE_SUCCESS', payload: data })
     } catch (error) {
       dispatch({

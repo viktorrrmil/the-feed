@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { SocketMessage, SocketStatus } from '../store/gameReducer'
 
 const MAX_RECONNECT_DELAY = 10000
 
-const buildSocketUrl = (sessionId) => {
+interface ReconnectState {
+  attempt: number
+  timeoutId: number | null
+  manualClose: boolean
+}
+
+const buildSocketUrl = (sessionId: string): string => {
   const envBase = import.meta.env.VITE_WS_BASE
-  if (envBase) {
+  if (typeof envBase === 'string' && envBase.length > 0) {
     return `${envBase.replace(/\/$/, '')}/ws/${sessionId}`
   }
 
@@ -12,11 +19,18 @@ const buildSocketUrl = (sessionId) => {
   return `${protocol}://${window.location.host}/ws/${sessionId}`
 }
 
-export const useGameSocket = (sessionId, onMessage) => {
-  const [status, setStatus] = useState('disconnected')
-  const socketRef = useRef(null)
-  const connectRef = useRef(null)
-  const reconnectRef = useRef({ attempt: 0, timeoutId: null, manualClose: false })
+export const useGameSocket = (
+  sessionId: string | null,
+  onMessage?: (message: SocketMessage) => void,
+) => {
+  const [status, setStatus] = useState<SocketStatus>('disconnected')
+  const socketRef = useRef<WebSocket | null>(null)
+  const connectRef = useRef<(() => void) | null>(null)
+  const reconnectRef = useRef<ReconnectState>({
+    attempt: 0,
+    timeoutId: null,
+    manualClose: false,
+  })
 
   const clearReconnect = useCallback(() => {
     if (reconnectRef.current.timeoutId) {
@@ -43,7 +57,6 @@ export const useGameSocket = (sessionId, onMessage) => {
 
     const socket = new WebSocket(buildSocketUrl(sessionId))
     socketRef.current = socket
-    setStatus('connecting')
 
     socket.onopen = () => {
       reconnectRef.current.attempt = 0
@@ -56,8 +69,10 @@ export const useGameSocket = (sessionId, onMessage) => {
       }
 
       try {
-        const payload = JSON.parse(event.data)
-        onMessage(payload)
+        const payload = JSON.parse(event.data) as unknown
+        if (payload && typeof payload === 'object') {
+          onMessage(payload as SocketMessage)
+        }
       } catch (error) {
         console.error('WS message parse failed', error)
       }
@@ -78,20 +93,22 @@ export const useGameSocket = (sessionId, onMessage) => {
     }
   }, [onMessage, scheduleReconnect, sessionId])
 
-  connectRef.current = connect
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
 
   useEffect(() => {
     if (!sessionId) {
-      setStatus('disconnected')
       return
     }
 
+    const reconnectState = reconnectRef.current
     reconnectRef.current.manualClose = false
     reconnectRef.current.attempt = 0
     connect()
 
     return () => {
-      reconnectRef.current.manualClose = true
+      reconnectState.manualClose = true
       clearReconnect()
       if (socketRef.current) {
         socketRef.current.close(1000, 'client shutdown')
@@ -99,7 +116,7 @@ export const useGameSocket = (sessionId, onMessage) => {
     }
   }, [clearReconnect, connect, sessionId])
 
-  const sendMessage = useCallback((payload) => {
+  const sendMessage = useCallback((payload: unknown): boolean => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       console.warn('WS send dropped: socket not connected')
       return false

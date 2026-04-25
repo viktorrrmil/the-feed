@@ -1,4 +1,43 @@
-export const initialGameState = {
+export type SocketStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error'
+
+export interface ServerState {
+  phase?: string
+  [key: string]: unknown
+}
+
+export interface SessionCreateResponse {
+  sessionId?: string | null
+  state?: ServerState | null
+}
+
+export interface SocketMessage {
+  type?: string
+  state?: ServerState
+  [key: string]: unknown
+}
+
+export interface GameState {
+  phase: string
+  sessionId: string | null
+  serverState: ServerState | null
+  socketStatus: SocketStatus
+  isCreatingSession: boolean
+  error: string | null
+}
+
+type GameAction =
+  | { type: 'SESSION_CREATE_REQUEST' }
+  | { type: 'SESSION_CREATE_SUCCESS'; payload: SessionCreateResponse }
+  | { type: 'SESSION_CREATE_FAILURE'; payload?: string }
+  | { type: 'SOCKET_STATUS'; payload: SocketStatus }
+  | { type: 'SOCKET_MESSAGE'; payload: SocketMessage }
+
+export const initialGameState: GameState = {
   phase: 'start',
   sessionId: null,
   serverState: null,
@@ -7,7 +46,7 @@ export const initialGameState = {
   error: null,
 }
 
-export const gameReducer = (state, action) => {
+export const gameReducer = (state: GameState, action: GameAction): GameState => {
   switch (action.type) {
     case 'SESSION_CREATE_REQUEST':
       return {
@@ -21,7 +60,7 @@ export const gameReducer = (state, action) => {
         ...state,
         sessionId: action.payload?.sessionId ?? null,
         serverState,
-        phase: serverState?.phase ?? 'feed',
+        phase: typeof serverState?.phase === 'string' ? serverState.phase : 'feed',
         isCreatingSession: false,
         error: null,
       }

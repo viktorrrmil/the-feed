@@ -1,6 +1,6 @@
-import FeedScreen from './screens/FeedScreen.jsx'
-import StartScreen from './screens/StartScreen.jsx'
-import { useGameState } from './hooks/useGameState.js'
+import FeedScreen from './screens/FeedScreen'
+import StartScreen from './screens/StartScreen'
+import { useGameState } from './hooks/useGameState'
 
 function App() {
   const {

@@ -1,4 +1,12 @@
-function FeedScreen({ sessionId, serverState, socketStatus }) {
+import type { ServerState, SocketStatus } from '../store/gameReducer'
+
+interface FeedScreenProps {
+  sessionId: string | null
+  serverState: ServerState | null
+  socketStatus: SocketStatus
+}
+
+function FeedScreen({ sessionId, serverState, socketStatus }: FeedScreenProps) {
   return (
     <main className="screen feed-screen">
       <div className="panel">

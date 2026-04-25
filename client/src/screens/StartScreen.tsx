@@ -1,4 +1,18 @@
-function StartScreen({ onStart, isCreating, error, socketStatus }) {
+import type { SocketStatus } from '../store/gameReducer'
+
+interface StartScreenProps {
+  onStart: () => void
+  isCreating: boolean
+  error: string | null
+  socketStatus: SocketStatus
+}
+
+function StartScreen({
+  onStart,
+  isCreating,
+  error,
+  socketStatus,
+}: StartScreenProps) {
   return (
     <main className="screen start-screen">
       <div className="panel">
