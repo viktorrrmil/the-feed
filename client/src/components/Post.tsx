@@ -1,0 +1,45 @@
+import { useState } from 'react'
+import type { FeedPost } from '../store/gameReducer'
+
+interface PostProps {
+  post: FeedPost
+}
+
+function Post({ post }: PostProps) {
+  const [liked, setLiked] = useState(false)
+  const [likes, setLikes] = useState(post.content.likes ?? 0)
+
+  const handleLike = () => {
+    setLiked((prevLiked) => {
+      if (prevLiked) {
+        setLikes((prevLikes) => Math.max(0, prevLikes - 1))
+        return false
+      }
+
+      setLikes((prevLikes) => prevLikes + 1)
+      return true
+    })
+  }
+
+  return (
+    <article className="post-card post-card-normal">
+      <header className="post-head">
+        <p>{post.content.author ?? 'Unknown'}</p>
+        <span>{post.content.handle ?? '@anonymous'}</span>
+      </header>
+      <p className="post-message">{post.content.message ?? '...'}</p>
+      <footer className="post-meta">
+        <button
+          type="button"
+          className={`post-like-button ${liked ? 'post-like-button-active' : ''}`}
+          onClick={handleLike}
+        >
+          ❤ {likes}
+        </button>
+        <span>#{post.id}</span>
+      </footer>
+    </article>
+  )
+}
+
+export default Post

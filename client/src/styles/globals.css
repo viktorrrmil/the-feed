@@ -58,6 +58,26 @@ button:not(:disabled):hover {
   padding: 3rem 1.5rem;
 }
 
+.feed-screen {
+  position: relative;
+  overflow: hidden;
+}
+
+.feed-screen-battle-mockup {
+  background: #15171b;
+}
+
+.feed-screen-battle-mockup::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 4px #7c1025,
+    inset 0 0 0 8px rgba(24, 6, 10, 0.92);
+}
+
 .panel {
   width: min(620px, 100%);
   background: rgba(22, 22, 35, 0.9);
@@ -120,6 +140,11 @@ h1 {
   pointer-events: none;
 }
 
+.feed-screen-encounter .walking-bg {
+  will-change: transform;
+  animation: encounter-bg-shake 780ms cubic-bezier(0.22, 0.78, 0.26, 1) 3;
+}
+
 .walking-bg::before,
 .walking-bg::after {
   content: '';
@@ -160,9 +185,58 @@ h1 {
   display: none;
 }
 
-.phone-frame {
+.encounter-chaos-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 80, 118, 0.26) 0, rgba(255, 80, 118, 0) 64%),
+    repeating-linear-gradient(
+      -18deg,
+      rgba(255, 118, 146, 0.11) 0 12px,
+      rgba(122, 14, 48, 0.2) 12px 24px
+    );
+  mix-blend-mode: screen;
+}
+
+.feed-screen-encounter .encounter-chaos-layer {
+  opacity: 1;
+  will-change: transform, opacity;
+  animation:
+    encounter-bg-shake 720ms cubic-bezier(0.2, 0.82, 0.24, 1) 3,
+    encounter-chaos-fade 2300ms ease-out forwards;
+}
+
+.phone-rig {
   position: relative;
   z-index: 3;
+}
+
+.feed-screen-encounter .phone-rig {
+  will-change: transform;
+  animation:
+    encounter-phone-shake 700ms cubic-bezier(0.24, 0.78, 0.3, 1) 3,
+    encounter-phone-pull-in 2360ms cubic-bezier(0.12, 0.88, 0.2, 1) 120ms forwards,
+    encounter-phone-fade-through 2360ms linear 120ms forwards;
+}
+
+.feed-screen-battle-mockup:not(.feed-screen-encounter) .phone-rig {
+  opacity: 0;
+  transform: scale(4.6);
+  pointer-events: none;
+}
+
+.feed-screen-returning.feed-screen-battle-mockup .phone-rig {
+  opacity: 1;
+  transform: scale(4.6);
+  will-change: transform, opacity;
+  animation: battle-return-phone 760ms cubic-bezier(0.22, 0.72, 0.28, 1) forwards;
+}
+
+.phone-frame {
+  position: relative;
   width: min(420px, 100%);
   height: 78vh;
   min-height: 620px;
@@ -176,6 +250,11 @@ h1 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.feed-screen-lock-phase .phone-frame {
+  will-change: transform;
+  animation: encounter-lock-wobble 180ms cubic-bezier(0.36, 0, 0.64, 1) infinite;
 }
 
 .phone-status,
@@ -211,6 +290,150 @@ h1 {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
     #231c31;
+}
+
+.encounter-laser-burst {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+  mix-blend-mode: screen;
+}
+
+.encounter-laser-burst::before,
+.encounter-laser-burst::after {
+  content: '';
+  position: absolute;
+  left: var(--impact-x, 50vw);
+  top: var(--impact-y, 50vh);
+  opacity: 0;
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform, opacity;
+}
+
+.encounter-laser-burst::before {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+  background: rgba(5, 5, 7, 0.96);
+  animation:
+    encounter-impact-visibility 84ms steps(1, end) 760ms both,
+    encounter-impact-spike 84ms steps(2, end) 760ms both;
+}
+
+.encounter-laser-burst::after {
+  width: var(--impact-w, 280px);
+  height: var(--impact-h, 480px);
+  border-radius: 24px;
+  border: 2px solid rgba(246, 246, 250, 0.96);
+  background: transparent;
+  box-shadow: 0 0 24px rgba(255, 42, 92, 0.86);
+  animation:
+    encounter-impact-visibility 84ms steps(1, end) 760ms both,
+    encounter-impact-outline 84ms steps(2, end) 760ms both;
+}
+
+.encounter-chaos-lines,
+.encounter-impact-skull {
+  position: absolute;
+  left: var(--impact-x, 50vw);
+  top: var(--impact-y, 50vh);
+  transform: translate3d(-50%, -50%, 0);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.encounter-chaos-lines {
+  width: max(250vw, 250vh);
+  aspect-ratio: 1;
+  filter: contrast(1.85) brightness(1.36);
+  animation:
+    encounter-chaos-lines-fire 460ms steps(5, end) 220ms both,
+    encounter-chaos-lines-jitter 260ms steps(4, end) 240ms 1;
+}
+
+.encounter-chaos-lines-a {
+  background: conic-gradient(
+    from -12deg,
+    rgba(255, 255, 255, 0.96) 0deg 8deg,
+    rgba(255, 255, 255, 0) 8deg 14deg,
+    rgba(255, 26, 84, 0.92) 14deg 17deg,
+    rgba(255, 26, 84, 0) 17deg 41deg,
+    rgba(255, 255, 255, 0.94) 41deg 48deg,
+    rgba(255, 255, 255, 0) 48deg 84deg,
+    rgba(255, 32, 90, 0.9) 84deg 88deg,
+    rgba(255, 32, 90, 0) 88deg 126deg,
+    rgba(255, 255, 255, 0.9) 126deg 134deg,
+    rgba(255, 255, 255, 0) 134deg 188deg,
+    rgba(255, 22, 80, 0.92) 188deg 193deg,
+    rgba(255, 22, 80, 0) 193deg 232deg,
+    rgba(255, 255, 255, 0.88) 232deg 238deg,
+    rgba(255, 255, 255, 0) 238deg 286deg,
+    rgba(255, 30, 88, 0.9) 286deg 293deg,
+    rgba(255, 30, 88, 0) 293deg 336deg,
+    rgba(255, 255, 255, 0.95) 336deg 343deg,
+    rgba(255, 255, 255, 0) 343deg 360deg
+  );
+}
+
+.encounter-chaos-lines-b {
+  background: conic-gradient(
+    from 9deg,
+    rgba(255, 255, 255, 0.9) 0deg 5deg,
+    rgba(255, 255, 255, 0) 5deg 19deg,
+    rgba(255, 18, 72, 0.94) 19deg 25deg,
+    rgba(255, 18, 72, 0) 25deg 58deg,
+    rgba(255, 255, 255, 0.87) 58deg 66deg,
+    rgba(255, 255, 255, 0) 66deg 112deg,
+    rgba(255, 28, 88, 0.92) 112deg 116deg,
+    rgba(255, 28, 88, 0) 116deg 171deg,
+    rgba(255, 255, 255, 0.92) 171deg 176deg,
+    rgba(255, 255, 255, 0) 176deg 222deg,
+    rgba(255, 24, 84, 0.94) 222deg 230deg,
+    rgba(255, 24, 84, 0) 230deg 268deg,
+    rgba(255, 255, 255, 0.88) 268deg 273deg,
+    rgba(255, 255, 255, 0) 273deg 318deg,
+    rgba(255, 20, 76, 0.9) 318deg 326deg,
+    rgba(255, 20, 76, 0) 326deg 360deg
+  );
+  animation-delay: 340ms, 320ms;
+}
+
+.encounter-impact-skull {
+  width: var(--impact-w, 280px);
+  height: var(--impact-h, 480px);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: var(--font-pixel);
+  font-size: clamp(2.9rem, 9vw, 4.9rem);
+  line-height: 1;
+  text-shadow:
+    0 0 16px rgba(255, 255, 255, 0.85),
+    0 0 26px rgba(255, 44, 96, 0.8);
+  animation:
+    encounter-impact-visibility 84ms steps(1, end) 760ms both,
+    encounter-impact-skull-pulse 84ms steps(2, end) 760ms both;
+}
+
+.phone-feed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 108, 138, 0.4) 0%, rgba(216, 16, 60, 0.7) 52%, #750114 100%),
+    rgba(196, 8, 48, 0.52);
+  box-shadow: inset 0 0 120px rgba(255, 84, 120, 0.52);
+}
+
+.feed-screen-encounter .phone-feed::after {
+  animation: encounter-phone-world-bleed 2040ms cubic-bezier(0.22, 0.74, 0.3, 1) 280ms forwards;
 }
 
 .phone-feed-viewport {
@@ -252,6 +475,157 @@ h1 {
 
 .feed-page-next {
   z-index: 2;
+}
+
+.input-lock-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  touch-action: none;
+  background: transparent;
+}
+
+.battle-mockup {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  padding: clamp(1rem, 2.8vw, 2.2rem);
+  display: grid;
+  grid-template-columns: 1fr minmax(240px, 300px);
+  grid-template-rows: auto 1fr auto;
+  gap: 1rem;
+  background:
+    repeating-linear-gradient(0deg, rgba(36, 38, 44, 0.45) 0 2px, rgba(27, 29, 34, 0.45) 2px 4px),
+    #171a1f;
+  image-rendering: pixelated;
+}
+
+.battle-mockup-transition {
+  opacity: 0;
+  clip-path: inset(
+    var(--impact-top, 0px) var(--impact-right, 0px) var(--impact-bottom, 0px) var(--impact-left, 0px) round 28px
+  );
+  animation: battle-world-reveal 2280ms cubic-bezier(0.14, 0.82, 0.18, 1) 220ms forwards;
+}
+
+.battle-mockup-live {
+  opacity: 1;
+  clip-path: inset(0 round 0);
+}
+
+.battle-mockup-return {
+  opacity: 1;
+  clip-path: inset(0 round 0);
+  pointer-events: none;
+  animation: battle-world-collapse 760ms cubic-bezier(0.24, 0.7, 0.28, 1) forwards;
+}
+
+.battle-hud {
+  grid-column: 1 / -1;
+}
+
+.battle-health {
+  max-width: min(780px, 100%);
+  border: 2px solid #79808f;
+  background: #232730;
+  padding: 0.45rem 0.6rem;
+  box-shadow:
+    inset 0 0 0 2px #111319,
+    0 0 0 1px #2a2e36;
+}
+
+.battle-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-pixel);
+  font-size: 0.58rem;
+  color: #d7dbe6;
+  letter-spacing: 0.08em;
+}
+
+.battle-health-track {
+  height: 18px;
+  border: 2px solid #0c0d10;
+  background: #0b0d10;
+  padding: 2px;
+}
+
+.battle-health-fill {
+  display: block;
+  width: 82%;
+  height: 100%;
+  background: #8f132d;
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.14);
+}
+
+.battle-chat {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  margin: 0;
+  border: 2px solid #646c7d;
+  background: #21252e;
+  color: #c3c9d8;
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  line-height: 1.1;
+  padding: 0.75rem 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  box-shadow: inset 0 0 0 2px #0f1218;
+}
+
+.battle-chat p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.battle-actions {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.battle-actions button {
+  min-width: 110px;
+  border-radius: 0;
+  border: 2px solid #838b9d;
+  background: #292d36;
+  color: #f4f6fa;
+  font-family: var(--font-pixel);
+  font-size: 0.58rem;
+  padding: 0.65rem 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow:
+    inset 0 0 0 2px #14161b,
+    0 4px 0 #0f1115;
+  transition: none;
+}
+
+.battle-actions button:nth-child(4) {
+  border-color: #9c3148;
+  color: #ffcad4;
+}
+
+.battle-actions button:nth-child(5) {
+  border-color: #3e6f87;
+  color: #c9f0ff;
+  min-width: 150px;
+}
+
+.battle-actions button:not(:disabled):hover {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 0 0 2px #14161b,
+    0 2px 0 #0f1115;
 }
 
 .post-card {
@@ -351,6 +725,277 @@ h1 {
   }
   50% {
     box-shadow: 0 0 20px 8px rgba(255, 36, 93, 0.4);
+  }
+}
+
+@keyframes encounter-bg-shake {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  12% {
+    transform: translate3d(-5px, 2px, 0) rotate(-0.16deg);
+  }
+  24% {
+    transform: translate3d(6px, -3px, 0) rotate(0.18deg);
+  }
+  37% {
+    transform: translate3d(-4px, -2px, 0) rotate(-0.12deg);
+  }
+  52% {
+    transform: translate3d(5px, 3px, 0) rotate(0.15deg);
+  }
+  66% {
+    transform: translate3d(-6px, 2px, 0) rotate(-0.14deg);
+  }
+  80% {
+    transform: translate3d(4px, -3px, 0) rotate(0.1deg);
+  }
+  92% {
+    transform: translate3d(-3px, 1px, 0) rotate(-0.06deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes encounter-phone-shake {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  14% {
+    transform: translate3d(4px, -2px, 0) rotate(0.26deg);
+  }
+  28% {
+    transform: translate3d(-5px, 3px, 0) rotate(-0.24deg);
+  }
+  42% {
+    transform: translate3d(4px, 2px, 0) rotate(0.2deg);
+  }
+  58% {
+    transform: translate3d(-4px, -3px, 0) rotate(-0.18deg);
+  }
+  74% {
+    transform: translate3d(3px, 2px, 0) rotate(0.14deg);
+  }
+  88% {
+    transform: translate3d(-2px, -1px, 0) rotate(-0.08deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes encounter-phone-pull-in {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(4.6);
+  }
+}
+
+@keyframes encounter-phone-fade-through {
+  0%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes encounter-lock-wobble {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  20% {
+    transform: translate3d(2px, 0, 0);
+  }
+  40% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  60% {
+    transform: translate3d(3px, 0, 0);
+  }
+  80% {
+    transform: translate3d(-1px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes encounter-chaos-fade {
+  0% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes encounter-impact-visibility {
+  0% {
+    opacity: 0;
+  }
+  1%,
+  98% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes encounter-impact-spike {
+  0% {
+    filter: saturate(1) brightness(1) contrast(1);
+  }
+  12%,
+  78% {
+    filter: saturate(1.8) brightness(2.35) contrast(2.2);
+  }
+  100% {
+    filter: saturate(1) brightness(1) contrast(1);
+  }
+}
+
+@keyframes encounter-impact-outline {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.92);
+    box-shadow: 0 0 8px rgba(255, 42, 92, 0.44);
+  }
+  18%,
+  74% {
+    transform: translate3d(-50%, -50%, 0) scale(1);
+    box-shadow: 0 0 30px rgba(255, 42, 92, 0.94);
+  }
+  100% {
+    transform: translate3d(-50%, -50%, 0) scale(1.06);
+    box-shadow: 0 0 6px rgba(255, 42, 92, 0.24);
+  }
+}
+
+@keyframes encounter-chaos-lines-fire {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, -50%, 0) scale(0.78) rotate(-5deg);
+  }
+  10% {
+    opacity: 0.9;
+    transform: translate3d(-50%, -50%, 0) scale(0.95) rotate(2deg);
+  }
+  34% {
+    opacity: 1;
+    transform: translate3d(-50%, -50%, 0) scale(1.08) rotate(-1deg);
+  }
+  58% {
+    opacity: 0.88;
+    transform: translate3d(-50%, -50%, 0) scale(1.14) rotate(3deg);
+  }
+  82% {
+    opacity: 0.62;
+    transform: translate3d(-50%, -50%, 0) scale(1.2) rotate(-4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-50%, -50%, 0) scale(1.28) rotate(2deg);
+  }
+}
+
+@keyframes encounter-chaos-lines-jitter {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.92) rotate(-6deg);
+  }
+  25% {
+    transform: translate3d(-50%, -50%, 0) scale(1.03) rotate(5deg);
+  }
+  50% {
+    transform: translate3d(-50%, -50%, 0) scale(0.96) rotate(-3deg);
+  }
+  75% {
+    transform: translate3d(-50%, -50%, 0) scale(1.08) rotate(4deg);
+  }
+  100% {
+    transform: translate3d(-50%, -50%, 0) scale(1) rotate(-2deg);
+  }
+}
+
+@keyframes encounter-impact-skull-pulse {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.76);
+  }
+  12%,
+  74% {
+    transform: translate3d(-50%, -50%, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(-50%, -50%, 0) scale(1.04);
+  }
+}
+
+@keyframes encounter-phone-world-bleed {
+  0% {
+    opacity: 0;
+    filter: saturate(1) brightness(1);
+  }
+  54% {
+    opacity: 0.62;
+    filter: saturate(0.66) brightness(0.82);
+  }
+  100% {
+    opacity: 1;
+    filter: saturate(0.52) brightness(0.74);
+  }
+}
+
+@keyframes battle-world-reveal {
+  0% {
+    opacity: 0;
+    clip-path: inset(
+      var(--impact-top, 0px) var(--impact-right, 0px) var(--impact-bottom, 0px) var(--impact-left, 0px) round 28px
+    );
+    filter: brightness(1.1) contrast(1.22);
+  }
+  42% {
+    opacity: 0.72;
+    clip-path: inset(
+      calc(var(--impact-top, 0px) * 0.45) calc(var(--impact-right, 0px) * 0.45) calc(var(--impact-bottom, 0px) * 0.45)
+        calc(var(--impact-left, 0px) * 0.45)
+      round 20px
+    );
+    filter: brightness(1) contrast(1.1);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 round 0);
+    filter: brightness(1) contrast(1);
+  }
+}
+
+@keyframes battle-world-collapse {
+  0% {
+    opacity: 1;
+    clip-path: inset(0 round 0);
+    filter: brightness(1) contrast(1);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(
+      var(--impact-top, 0px) var(--impact-right, 0px) var(--impact-bottom, 0px) var(--impact-left, 0px) round 28px
+    );
+    filter: brightness(1.08) contrast(1.12);
+  }
+}
+
+@keyframes battle-return-phone {
+  0% {
+    transform: translate3d(0, 0, 0) scale(4.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
   }
 }
 
