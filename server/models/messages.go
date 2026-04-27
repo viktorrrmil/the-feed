@@ -19,6 +19,26 @@ type FeedPostMessage struct {
 	Post *game.FeedPost `json:"post"`
 }
 
+type CombatStartMessage struct {
+	Type  string      `json:"type"`
+	Enemy *game.Enemy `json:"enemy"`
+}
+
+type CombatResultMessage struct {
+	Type string           `json:"type"`
+	Turn *game.TurnResult `json:"turn"`
+}
+
+type CombatEndMessage struct {
+	Type   string `json:"type"`
+	Result string `json:"result"`
+}
+
+type GameOverMessage struct {
+	Type  string `json:"type"`
+	Score int    `json:"score"`
+}
+
 type ErrorMessage struct {
 	Type  string `json:"type"`
 	Error string `json:"error"`

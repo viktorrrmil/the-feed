@@ -1,9 +1,10 @@
 package game
 
 import (
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"sync"
 )
 
@@ -12,6 +13,7 @@ type Session struct {
 	State *GameState
 	mu    sync.RWMutex
 	feed  *FeedGenerator
+	rng   *rand.Rand
 }
 
 var sessionStore = struct {
@@ -31,6 +33,7 @@ func CreateSession() (*Session, error) {
 		ID:    sessionID,
 		State: NewGameState(sessionID),
 		feed:  NewFeedGenerator(),
+		rng:   NewCombatRNG(),
 	}
 
 	sessionStore.Lock()
@@ -54,20 +57,39 @@ func (s *Session) SnapshotState() *GameState {
 	return cloneState(s.State)
 }
 
-func (s *Session) ScrollFeed() (*FeedPost, *GameState, error) {
+func (s *Session) ScrollFeed() (*FeedPost, *Enemy, *GameState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.State.Phase != "feed" {
-		return nil, nil, fmt.Errorf("cannot scroll when phase is %s", s.State.Phase)
+		return nil, nil, nil, fmt.Errorf("cannot scroll when phase is %s", s.State.Phase)
 	}
 
 	post := s.feed.NextPost(s.State)
+	var combatEnemy *Enemy
 	if post.Type == PostTypeNormal {
 		s.State.Score++
+	} else if post.Type == PostTypeEvil {
+		enemy, err := StartCombat(s.State, post.Content.EnemyID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		combatEnemy = enemy
 	}
 
-	return post, cloneState(s.State), nil
+	return post, combatEnemy, cloneState(s.State), nil
+}
+
+func (s *Session) HandleCombatAction(action PlayerAction) (*TurnResult, string, *GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	turn, combatResult, err := ProcessCombatTurn(s.State, action, s.rng)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	return turn, combatResult, cloneState(s.State), nil
 }
 
 func cloneState(state *GameState) *GameState {
@@ -77,11 +99,21 @@ func cloneState(state *GameState) *GameState {
 
 	cloned := *state
 	cloned.DefeatedEnemies = append([]string(nil), state.DefeatedEnemies...)
+	cloned.Exploits = state.Exploits
 	cloned.Inventory = append([]*Exploit(nil), state.Inventory...)
 	cloned.Items = append([]*Item(nil), state.Items...)
 
 	if state.Combat != nil {
 		combatCloned := *state.Combat
+		if state.Combat.Enemy != nil {
+			enemyCloned := *state.Combat.Enemy
+			enemyCloned.Abilities = append([]EnemyAbility(nil), state.Combat.Enemy.Abilities...)
+			if state.Combat.Enemy.StealableExploit != nil {
+				exploitCloned := *state.Combat.Enemy.StealableExploit
+				enemyCloned.StealableExploit = &exploitCloned
+			}
+			combatCloned.Enemy = &enemyCloned
+		}
 		combatCloned.EnemyDebuffs = cloneIntMap(state.Combat.EnemyDebuffs)
 		combatCloned.PlayerDebuffs = cloneIntMap(state.Combat.PlayerDebuffs)
 		combatCloned.DisabledExploits = cloneIntMap(state.Combat.DisabledExploits)
@@ -106,7 +138,7 @@ func cloneIntMap(input map[string]int) map[string]int {
 
 func generateSessionID() (string, error) {
 	buffer := make([]byte, 16)
-	if _, err := rand.Read(buffer); err != nil {
+	if _, err := cryptorand.Read(buffer); err != nil {
 		return "", fmt.Errorf("generate session id: %w", err)
 	}
 	return hex.EncodeToString(buffer), nil

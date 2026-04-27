@@ -1,4 +1,5 @@
 import FeedScreen from './screens/FeedScreen'
+import GameOverScreen from './screens/GameOverScreen'
 import StartScreen from './screens/StartScreen'
 import { useGameState } from './hooks/useGameState'
 
@@ -14,9 +15,13 @@ function App() {
     createSession,
     scrollFeed,
     advanceFeed,
+    sendCombatAction,
+    latestCombatTurn,
+    latestCombatResult,
+    gameOverScore,
   } = useGameState()
 
-  if (phase === 'feed') {
+  if (phase === 'feed' || phase === 'combat') {
     const score = typeof serverState?.score === 'number' ? serverState.score : 0
     return (
       <FeedScreen
@@ -27,8 +32,17 @@ function App() {
         score={score}
         onScroll={scrollFeed}
         onAdvance={advanceFeed}
+        latestCombatTurn={latestCombatTurn}
+        latestCombatResult={latestCombatResult}
+        onCombatAction={sendCombatAction}
       />
     )
+  }
+
+  if (phase === 'game_over') {
+    const score =
+      gameOverScore ?? (typeof serverState?.score === 'number' ? serverState.score : 0)
+    return <GameOverScreen score={score} onRestart={createSession} />
   }
 
   return (

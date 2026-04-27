@@ -33,6 +33,20 @@ export const useGameState = () => {
     dispatch({ type: 'FEED_ADVANCE' })
   }, [])
 
+  const sendCombatAction = useCallback(
+    (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string): boolean => {
+      const sent = sendMessage({ type: 'COMBAT_ACTION', action, exploitId })
+      if (!sent) {
+        dispatch({
+          type: 'FEED_SCROLL_FAILURE',
+          payload: 'Combat action failed: socket is not connected',
+        })
+      }
+      return sent
+    },
+    [sendMessage],
+  )
+
   const createSession = useCallback(async () => {
     dispatch({ type: 'SESSION_CREATE_REQUEST' })
 
@@ -59,5 +73,6 @@ export const useGameState = () => {
     createSession,
     scrollFeed,
     advanceFeed,
+    sendCombatAction,
   }
 }

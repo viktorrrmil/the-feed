@@ -8,7 +8,13 @@ import {
 } from 'react'
 import EvilPost from '../components/EvilPost'
 import Post from '../components/Post'
-import type { FeedPost, ServerState, SocketStatus } from '../store/gameReducer'
+import type {
+  CombatTurnResult,
+  FeedPost,
+  PlayerExploit,
+  ServerState,
+  SocketStatus,
+} from '../store/gameReducer'
 
 interface FeedScreenProps {
   sessionId: string | null
@@ -18,12 +24,15 @@ interface FeedScreenProps {
   score: number
   onScroll: () => boolean
   onAdvance: () => void
+  latestCombatTurn: CombatTurnResult | null
+  latestCombatResult: string | null
+  onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string) => boolean
 }
 
 type SwipeAnimation = 'none' | 'snap-forward' | 'snap-back'
 const ENCOUNTER_LOCK_MS = 2000
 const ENCOUNTER_TOTAL_MS = 2860
-const RETURN_TO_FEED_MS = 760
+const BEST_SCORE_STORAGE_KEY = 'the-feed-best-score'
 
 function FeedScreen({
   sessionId,
@@ -33,6 +42,9 @@ function FeedScreen({
   score,
   onScroll,
   onAdvance,
+  latestCombatTurn,
+  latestCombatResult,
+  onCombatAction,
 }: FeedScreenProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const startYRef = useRef<number | null>(null)
@@ -47,16 +59,22 @@ function FeedScreen({
   const settleTimerRef = useRef<number | null>(null)
   const lockTimerRef = useRef<number | null>(null)
   const encounterTimerRef = useRef<number | null>(null)
-  const returnToFeedTimerRef = useRef<number | null>(null)
   const lastTriggeredEvilPostIdRef = useRef<string | null>(null)
   const [dragOffset, setDragOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [swipeAnimation, setSwipeAnimation] = useState<SwipeAnimation>('none')
   const [isEncounterActive, setIsEncounterActive] = useState(false)
   const [isEncounterLockPhase, setIsEncounterLockPhase] = useState(false)
-  const [isBattleMockupActive, setIsBattleMockupActive] = useState(false)
-  const [isReturningToFeed, setIsReturningToFeed] = useState(false)
   const [isInputLocked, setIsInputLocked] = useState(false)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [selectedExploitId, setSelectedExploitId] = useState('focused_reply')
+  const [storedBestScore] = useState(() => {
+    const persistedBestScore = Number.parseInt(
+      window.localStorage.getItem(BEST_SCORE_STORAGE_KEY) ?? '0',
+      10,
+    )
+    return Number.isFinite(persistedBestScore) && persistedBestScore > 0 ? persistedBestScore : 0
+  })
   const [impactFrame, setImpactFrame] = useState({
     x: 0,
     y: 0,
@@ -71,6 +89,36 @@ function FeedScreen({
   const currentPost = posts[0] ?? null
   const nextPost = posts[1] ?? null
   const connected = socketStatus === 'connected'
+  const phase = typeof serverState?.phase === 'string' ? serverState.phase : 'feed'
+  const isCombatPhase = phase === 'combat'
+  const combat = serverState?.combat ?? null
+  const combatEnemy = combat?.enemy
+  const combatEnemyMaxHp = typeof combatEnemy?.maxHp === 'number' ? combatEnemy.maxHp : 1
+  const combatEnemyHp = typeof combat?.enemyHp === 'number' ? combat.enemyHp : combatEnemyMaxHp
+  const combatEnemyHpPercent = Math.max(
+    0,
+    Math.min(100, Math.round((combatEnemyHp / combatEnemyMaxHp) * 100)),
+  )
+  const combatLog = Array.isArray(combat?.log) ? combat.log : []
+  const combatTurn = combat?.turn
+  const equippedExploits = (Array.isArray(serverState?.exploits)
+    ? serverState.exploits
+    : []) as Array<PlayerExploit | null>
+  const disabledExploits = (combat?.disabledExploits ?? {}) as Record<string, number>
+  const availableExploitIds = equippedExploits
+    .filter((exploit): exploit is PlayerExploit => Boolean(exploit?.id))
+    .map((exploit) => exploit.id)
+  const effectiveSelectedExploitId = availableExploitIds.includes(selectedExploitId)
+    ? selectedExploitId
+    : (availableExploitIds[0] ?? '')
+  const selectedExploit =
+    equippedExploits.find((exploit) => exploit?.id === effectiveSelectedExploitId) ?? null
+  const isBattleMockupActive = isCombatPhase || isEncounterActive
+  const canActInCombat =
+    connected && isCombatPhase && combatTurn === 'player' && !isEncounterActive
+  const isInteractionLocked = isInputLocked || isMenuOpen
+  const isFeedInteractionLocked = isInteractionLocked || isCombatPhase
+  const bestScore = Math.max(score, storedBestScore)
 
   const setOffset = useCallback((value: number) => {
     dragOffsetRef.current = value
@@ -85,10 +133,6 @@ function FeedScreen({
     if (encounterTimerRef.current !== null) {
       window.clearTimeout(encounterTimerRef.current)
       encounterTimerRef.current = null
-    }
-    if (returnToFeedTimerRef.current !== null) {
-      window.clearTimeout(returnToFeedTimerRef.current)
-      returnToFeedTimerRef.current = null
     }
   }, [])
 
@@ -109,8 +153,6 @@ function FeedScreen({
 
       setIsEncounterActive(true)
       setIsEncounterLockPhase(true)
-      setIsBattleMockupActive(true)
-      setIsReturningToFeed(false)
       setIsInputLocked(true)
 
       lockTimerRef.current = window.setTimeout(() => {
@@ -137,7 +179,7 @@ function FeedScreen({
   }, [posts.length])
 
   useEffect(() => {
-    if (!connected) {
+    if (!connected || isMenuOpen || isCombatPhase) {
       pendingPostsRef.current = 0
       previousLengthRef.current = posts.length
       return
@@ -151,7 +193,7 @@ function FeedScreen({
       }
       pendingPostsRef.current += 1
     }
-  }, [connected, onScroll, posts.length])
+  }, [connected, isCombatPhase, isMenuOpen, onScroll, posts.length])
 
   useEffect(
     () => () => {
@@ -164,7 +206,7 @@ function FeedScreen({
   )
 
   useEffect(() => {
-    if (!isInputLocked) {
+    if (!isInteractionLocked) {
       return
     }
 
@@ -188,7 +230,31 @@ function FeedScreen({
       window.removeEventListener('touchmove', preventDefault)
       window.removeEventListener('keydown', preventKeyboardInput)
     }
-  }, [isInputLocked])
+  }, [isInteractionLocked])
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  useEffect(() => {
+    if (bestScore <= storedBestScore) {
+      return
+    }
+    window.localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(bestScore))
+  }, [bestScore, storedBestScore])
 
   useEffect(() => {
     if (!isEncounterActive) {
@@ -221,24 +287,29 @@ function FeedScreen({
     }
   }, [isEncounterActive])
 
-  const handleReturnToFeed = useCallback(() => {
-    if (!isBattleMockupActive || isEncounterActive || isReturningToFeed) {
-      return
-    }
+  const handleToggleMenu = useCallback(() => {
+    setIsMenuOpen((isOpen) => {
+      if (!isOpen) {
+        draggingRef.current = false
+        setIsDragging(false)
+        velocityRef.current = 0
+        setSwipeAnimation('none')
+        setOffset(0)
+      }
+      return !isOpen
+    })
+  }, [setOffset])
 
-    setIsReturningToFeed(true)
-    setIsInputLocked(true)
+  const handleResumeGame = useCallback(() => {
+    setIsMenuOpen(false)
+  }, [])
 
-    returnToFeedTimerRef.current = window.setTimeout(() => {
-      setIsBattleMockupActive(false)
-      setIsReturningToFeed(false)
-      setIsInputLocked(false)
-      returnToFeedTimerRef.current = null
-    }, RETURN_TO_FEED_MS)
-  }, [isBattleMockupActive, isEncounterActive, isReturningToFeed])
+  const handleRestartSession = useCallback(() => {
+    window.location.reload()
+  }, [])
 
   const finalizeSwipe = useCallback(() => {
-    if (!connected || isInputLocked) {
+    if (!connected || isFeedInteractionLocked) {
       setOffset(0)
       return
     }
@@ -265,10 +336,10 @@ function FeedScreen({
       }
       settleTimerRef.current = null
     }, 220)
-  }, [connected, isInputLocked, nextPost, onAdvance, setOffset, startEvilEncounter])
+  }, [connected, isFeedInteractionLocked, nextPost, onAdvance, setOffset, startEvilEncounter])
 
   const handlePointerDown: PointerEventHandler<HTMLDivElement> = (event) => {
-    if (!currentPost || !connected || isInputLocked) {
+    if (!currentPost || !connected || isFeedInteractionLocked) {
       return
     }
     const eventTarget = event.target as HTMLElement
@@ -393,7 +464,7 @@ function FeedScreen({
     isEncounterActive ? 'feed-screen-encounter' : '',
     isEncounterLockPhase ? 'feed-screen-lock-phase' : '',
     isBattleMockupActive && !isEncounterActive ? 'feed-screen-battle-mockup' : '',
-    isReturningToFeed ? 'feed-screen-returning' : '',
+    isMenuOpen ? 'feed-screen-menu-open' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -422,11 +493,27 @@ function FeedScreen({
           </div>
         ) : null}
 
+        <header className="feed-top-bar">
+          <button
+            type="button"
+            className="menu-toggle"
+            onClick={handleToggleMenu}
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMenuOpen}
+          >
+            ☰
+          </button>
+          <div className="score-ribbon">
+            <span>SCORE {score}</span>
+            <span>BEST {bestScore}</span>
+          </div>
+        </header>
+
         <div className="phone-rig">
           <section className="phone-frame">
             <header className="phone-status">
               <span>THE FEED</span>
-              <span>SCORE {score}</span>
+              <span>PHASE {serverState?.phase ?? 'feed'}</span>
               <span>{socketStatus}</span>
             </header>
 
@@ -468,40 +555,103 @@ function FeedScreen({
         {isBattleMockupActive ? (
           <section
             className={`battle-mockup ${
-              isReturningToFeed
-                ? 'battle-mockup-return'
-                : isEncounterActive
-                  ? 'battle-mockup-transition'
-                  : 'battle-mockup-live'
+              isEncounterActive ? 'battle-mockup-transition' : 'battle-mockup-live'
             }`}
             style={encounterBurstStyle}
             aria-label="Battle interface mockup"
           >
             <header className="battle-hud">
               <div className="battle-health">
-                <span className="battle-label">ENEMY // SIGNAL_REAPER</span>
+                <span className="battle-label">
+                  ENEMY // {combatEnemy?.name?.toUpperCase() ?? 'SIGNAL_REAPER'}
+                </span>
                 <div className="battle-health-track" role="img" aria-label="Enemy health">
-                  <span className="battle-health-fill" />
+                  <span className="battle-health-fill" style={{ width: `${combatEnemyHpPercent}%` }} />
                 </div>
               </div>
             </header>
 
             <aside className="battle-chat" aria-label="Combat chat">
-              <p>SYS: hostile channel stabilized.</p>
-              <p>VOID: I can see you scrolling.</p>
-              <p>SYS: input profile corrupted.</p>
-              <p>VOID: prove you can survive.</p>
+              {combatLog.length === 0 ? (
+                <>
+                  <p>SYS: hostile channel stabilized.</p>
+                  <p>VOID: I can see you scrolling.</p>
+                  <p>SYS: input profile corrupted.</p>
+                  <p>VOID: prove you can survive.</p>
+                </>
+              ) : (
+                combatLog.slice(-4).map((turn, index) => (
+                  <p key={`${turn.playerAction}-${turn.enemyAction}-${index}`}>
+                    YOU: {turn.playerAction} // ENEMY: {turn.enemyAction}
+                  </p>
+                ))
+              )}
+              {latestCombatTurn ? (
+                <p>
+                  HIT Δ ENEMY -{latestCombatTurn.playerDamage} / YOU -{latestCombatTurn.enemyDamage}
+                </p>
+              ) : null}
+              {latestCombatResult === 'win' ? <p>SYS: target neutralized. returning to feed…</p> : null}
+              {latestCombatResult === 'lose' ? <p>SYS: attention collapse detected.</p> : null}
             </aside>
 
             <footer className="battle-actions">
-              <button type="button">Block</button>
-              <button type="button">Parry</button>
-              <button type="button">Idle</button>
-              <button type="button">Exploit</button>
-              <button type="button" onClick={handleReturnToFeed} disabled={isReturningToFeed}>
-                Return to Feed
+              <button type="button" onClick={() => onCombatAction('attack')} disabled={!canActInCombat}>
+                Attack
+              </button>
+              <button type="button" onClick={() => onCombatAction('block')} disabled={!canActInCombat}>
+                Block
+              </button>
+              <button type="button" onClick={() => onCombatAction('parry')} disabled={!canActInCombat}>
+                Parry
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedExploit?.id) {
+                    onCombatAction('exploit', selectedExploit.id)
+                  }
+                }}
+                disabled={
+                  !canActInCombat ||
+                  !selectedExploit ||
+                  (selectedExploit.id ? (disabledExploits[selectedExploit.id] ?? 0) > 0 : true)
+                }
+              >
+                Exploit
+              </button>
+              <button
+                type="button"
+                disabled={!isCombatPhase}
+                onClick={() => {
+                  if (!availableExploitIds.length) {
+                    return
+                  }
+                  const currentIndex = availableExploitIds.indexOf(effectiveSelectedExploitId)
+                  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % availableExploitIds.length
+                  setSelectedExploitId(availableExploitIds[nextIndex])
+                }}
+              >
+                {selectedExploit?.name ?? 'Select Exploit'}
               </button>
             </footer>
+          </section>
+        ) : null}
+        {isMenuOpen ? (
+          <section className="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Game menu">
+            <div className="pause-menu-panel">
+              <p className="pause-menu-title">PAUSED</p>
+              <p className="pause-menu-meta">SESSION {sessionId ? sessionId.slice(0, 8) : 'pending'}</p>
+              <button type="button" onClick={handleResumeGame}>
+                Resume
+              </button>
+              <button type="button" onClick={handleRestartSession}>
+                Restart Session
+              </button>
+              <button type="button" onClick={handleResumeGame}>
+                Close Menu
+              </button>
+            </div>
           </section>
         ) : null}
       </div>

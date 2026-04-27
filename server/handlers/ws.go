@@ -54,7 +54,7 @@ func HandleWebSocket(c *gin.Context) {
 
 		switch incoming.Type {
 		case "SCROLL":
-			post, state, err := session.ScrollFeed()
+			post, combatEnemy, state, err := session.ScrollFeed()
 			if err != nil {
 				if writeErr := conn.WriteJSON(models.ErrorMessage{
 					Type:  "ERROR",
@@ -72,6 +72,66 @@ func HandleWebSocket(c *gin.Context) {
 			}); err != nil {
 				log.Printf("ws feed post send failed: %v", err)
 				return
+			}
+
+			if combatEnemy != nil {
+				if err := conn.WriteJSON(models.CombatStartMessage{
+					Type:  "COMBAT_START",
+					Enemy: combatEnemy,
+				}); err != nil {
+					log.Printf("ws combat start send failed: %v", err)
+					return
+				}
+			}
+
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws state update send failed: %v", err)
+				return
+			}
+		case "COMBAT_ACTION":
+			turn, combatResult, state, err := session.HandleCombatAction(game.PlayerAction{
+				Action:    incoming.Action,
+				ExploitID: incoming.ExploitID,
+			})
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send combat error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+
+			if err := conn.WriteJSON(models.CombatResultMessage{
+				Type: "COMBAT_RESULT",
+				Turn: turn,
+			}); err != nil {
+				log.Printf("ws combat result send failed: %v", err)
+				return
+			}
+
+			if combatResult != "" {
+				if err := conn.WriteJSON(models.CombatEndMessage{
+					Type:   "COMBAT_END",
+					Result: combatResult,
+				}); err != nil {
+					log.Printf("ws combat end send failed: %v", err)
+					return
+				}
+				if combatResult == "lose" {
+					if err := conn.WriteJSON(models.GameOverMessage{
+						Type:  "GAME_OVER",
+						Score: state.Score,
+					}); err != nil {
+						log.Printf("ws game over send failed: %v", err)
+						return
+					}
+				}
 			}
 
 			if err := conn.WriteJSON(models.StateUpdate{
