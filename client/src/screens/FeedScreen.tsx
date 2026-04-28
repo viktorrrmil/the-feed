@@ -17,6 +17,7 @@ import type {
 } from '../store/gameReducer'
 
 interface FeedScreenProps {
+  phase: string
   sessionId: string | null
   serverState: ServerState | null
   socketStatus: SocketStatus
@@ -24,17 +25,35 @@ interface FeedScreenProps {
   score: number
   onScroll: () => boolean
   onAdvance: () => void
+  onCombatEntranceComplete: () => void
+  onCombatSummaryContinue: () => void
   latestCombatTurn: CombatTurnResult | null
   latestCombatResult: string | null
+  pendingCombatStart: boolean
+  pendingCombatEnemyId: string | null
+  combatSummaryPending: boolean
   onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string) => boolean
 }
 
 type SwipeAnimation = 'none' | 'snap-forward' | 'snap-back'
 const ENCOUNTER_LOCK_MS = 2000
 const ENCOUNTER_TOTAL_MS = 2860
+const ENCOUNTER_START_DELAY_MS = 70
+const COMBAT_RETURN_MS = 760
 const BEST_SCORE_STORAGE_KEY = 'the-feed-best-score'
+const EMPTY_COMBAT_LOG: CombatTurnResult[] = []
+const EMPTY_INVENTORY: Array<{ id?: string; name?: string } | null> = []
+interface CombatSummaryData {
+  result: 'win' | 'lose'
+  enemyName: string
+  turns: number
+  totalDamageDealt: number
+  totalDamageTaken: number
+  rewards: string[]
+}
 
 function FeedScreen({
+  phase,
   sessionId,
   serverState,
   socketStatus,
@@ -42,8 +61,13 @@ function FeedScreen({
   score,
   onScroll,
   onAdvance,
+  onCombatEntranceComplete,
+  onCombatSummaryContinue,
   latestCombatTurn,
   latestCombatResult,
+  pendingCombatStart,
+  pendingCombatEnemyId,
+  combatSummaryPending,
   onCombatAction,
 }: FeedScreenProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -59,12 +83,27 @@ function FeedScreen({
   const settleTimerRef = useRef<number | null>(null)
   const lockTimerRef = useRef<number | null>(null)
   const encounterTimerRef = useRef<number | null>(null)
+  const encounterStartTimerRef = useRef<number | null>(null)
+  const summaryReadyRef = useRef(false)
+  const returnTimerRef = useRef<number | null>(null)
+  const visiblePostIdRef = useRef<string | null>(null)
+  const combatInventoryBaselineRef = useRef<string[]>([])
+  const combatSummaryRef = useRef<CombatSummaryData>({
+    result: 'win',
+    enemyName: 'Signal Reaper',
+    turns: 0,
+    totalDamageDealt: 0,
+    totalDamageTaken: 0,
+    rewards: [],
+  })
   const lastTriggeredEvilPostIdRef = useRef<string | null>(null)
   const [dragOffset, setDragOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [swipeAnimation, setSwipeAnimation] = useState<SwipeAnimation>('none')
   const [isEncounterActive, setIsEncounterActive] = useState(false)
   const [isEncounterLockPhase, setIsEncounterLockPhase] = useState(false)
+  const [postCombatSummary, setPostCombatSummary] = useState<CombatSummaryData | null>(null)
+  const [isCombatReturnActive, setIsCombatReturnActive] = useState(false)
   const [isInputLocked, setIsInputLocked] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [selectedExploitId, setSelectedExploitId] = useState('focused_reply')
@@ -89,7 +128,6 @@ function FeedScreen({
   const currentPost = posts[0] ?? null
   const nextPost = posts[1] ?? null
   const connected = socketStatus === 'connected'
-  const phase = typeof serverState?.phase === 'string' ? serverState.phase : 'feed'
   const isCombatPhase = phase === 'combat'
   const combat = serverState?.combat ?? null
   const combatEnemy = combat?.enemy
@@ -99,8 +137,14 @@ function FeedScreen({
     0,
     Math.min(100, Math.round((combatEnemyHp / combatEnemyMaxHp) * 100)),
   )
-  const combatLog = Array.isArray(combat?.log) ? combat.log : []
+  const combatLog = Array.isArray(combat?.log) ? combat.log : EMPTY_COMBAT_LOG
   const combatTurn = combat?.turn
+  const inventory = (Array.isArray(serverState?.inventory)
+    ? serverState.inventory
+    : EMPTY_INVENTORY) as Array<{ id?: string; name?: string } | null>
+  const inventoryIds = inventory
+    .filter((entry): entry is { id: string; name?: string } => Boolean(entry?.id))
+    .map((entry) => entry.id)
   const equippedExploits = (Array.isArray(serverState?.exploits)
     ? serverState.exploits
     : []) as Array<PlayerExploit | null>
@@ -113,11 +157,20 @@ function FeedScreen({
     : (availableExploitIds[0] ?? '')
   const selectedExploit =
     equippedExploits.find((exploit) => exploit?.id === effectiveSelectedExploitId) ?? null
-  const isBattleMockupActive = isCombatPhase || isEncounterActive
+  const isReturnTransitionActive = isCombatReturnActive
+  const isPostCombatSummaryActive = combatSummaryPending && !isReturnTransitionActive
+  const isBattleMockupActive =
+    isCombatPhase || isEncounterActive || isPostCombatSummaryActive || isReturnTransitionActive
   const canActInCombat =
-    connected && isCombatPhase && combatTurn === 'player' && !isEncounterActive
+    connected &&
+    isCombatPhase &&
+    combatTurn === 'player' &&
+    !isEncounterActive &&
+    !isPostCombatSummaryActive &&
+    !isReturnTransitionActive
   const isInteractionLocked = isInputLocked || isMenuOpen
-  const isFeedInteractionLocked = isInteractionLocked || isCombatPhase
+  const isFeedInteractionLocked =
+    isInteractionLocked || isCombatPhase || isPostCombatSummaryActive || isReturnTransitionActive
   const bestScore = Math.max(score, storedBestScore)
 
   const setOffset = useCallback((value: number) => {
@@ -136,8 +189,23 @@ function FeedScreen({
     }
   }, [])
 
+  const shouldStartEncounterForPost = useCallback(
+    (post: FeedPost) => {
+      if (post.type !== 'evil' || !pendingCombatStart) {
+        return false
+      }
+      if (!pendingCombatEnemyId) {
+        return true
+      }
+      return post.content.enemyId === pendingCombatEnemyId
+    },
+    [pendingCombatEnemyId, pendingCombatStart],
+  )
+  const isCurrentPostCombatTrigger =
+    currentPost !== null ? shouldStartEncounterForPost(currentPost) : false
+
   const startEvilEncounter = useCallback(
-    (postId: string) => {
+    (postId: string, onComplete?: () => void) => {
       if (lastTriggeredEvilPostIdRef.current === postId) {
         return
       }
@@ -150,6 +218,8 @@ function FeedScreen({
       velocityRef.current = 0
       setSwipeAnimation('none')
       setOffset(0)
+      setPostCombatSummary(null)
+      setIsCombatReturnActive(false)
 
       setIsEncounterActive(true)
       setIsEncounterLockPhase(true)
@@ -164,11 +234,35 @@ function FeedScreen({
         setIsEncounterActive(false)
         setIsEncounterLockPhase(false)
         setIsInputLocked(false)
+        onComplete?.()
         encounterTimerRef.current = null
       }, ENCOUNTER_TOTAL_MS)
     },
     [clearEncounterTimers, setOffset],
   )
+
+  useEffect(() => {
+    visiblePostIdRef.current = currentPost?.id ?? null
+  }, [currentPost?.id])
+
+  useEffect(() => {
+    if (!isCombatPhase) {
+      return
+    }
+    if (!combatInventoryBaselineRef.current.length) {
+      combatInventoryBaselineRef.current = inventoryIds
+    }
+    const totalDamageDealt = combatLog.reduce((total, turn) => total + turn.playerDamage, 0)
+    const totalDamageTaken = combatLog.reduce((total, turn) => total + turn.enemyDamage, 0)
+    combatSummaryRef.current = {
+      result: latestCombatResult === 'lose' ? 'lose' : 'win',
+      enemyName: combatEnemy?.name ?? 'Signal Reaper',
+      turns: combatLog.length,
+      totalDamageDealt,
+      totalDamageTaken,
+      rewards: [],
+    }
+  }, [combatEnemy?.name, combatLog, inventoryIds, isCombatPhase, latestCombatResult])
 
   useEffect(() => {
     const diff = posts.length - previousLengthRef.current
@@ -179,7 +273,7 @@ function FeedScreen({
   }, [posts.length])
 
   useEffect(() => {
-    if (!connected || isMenuOpen || isCombatPhase) {
+    if (!connected || isMenuOpen || isCombatPhase || pendingCombatStart) {
       pendingPostsRef.current = 0
       previousLengthRef.current = posts.length
       return
@@ -193,17 +287,98 @@ function FeedScreen({
       }
       pendingPostsRef.current += 1
     }
-  }, [connected, isCombatPhase, isMenuOpen, onScroll, posts.length])
+  }, [connected, isCombatPhase, isMenuOpen, onScroll, pendingCombatStart, posts.length])
 
   useEffect(
     () => () => {
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current)
       }
+      if (encounterStartTimerRef.current !== null) {
+        window.clearTimeout(encounterStartTimerRef.current)
+      }
+      if (returnTimerRef.current !== null) {
+        window.clearTimeout(returnTimerRef.current)
+      }
       clearEncounterTimers()
     },
     [clearEncounterTimers],
   )
+
+  useEffect(() => {
+    if (!combatSummaryPending) {
+      summaryReadyRef.current = false
+      combatInventoryBaselineRef.current = []
+      return
+    }
+    if (summaryReadyRef.current) {
+      return
+    }
+
+    const baselineIds = new Set(combatInventoryBaselineRef.current)
+    const newRewards = inventory
+      .filter((entry): entry is { id: string; name?: string } => Boolean(entry?.id))
+      .filter((entry) => !baselineIds.has(entry.id))
+      .map((entry) => entry.name ?? entry.id)
+
+    setPostCombatSummary({
+      ...combatSummaryRef.current,
+      result: latestCombatResult === 'lose' ? 'lose' : 'win',
+      rewards: newRewards,
+    })
+    summaryReadyRef.current = true
+  }, [combatSummaryPending, inventory, latestCombatResult])
+
+  useEffect(() => {
+    if (encounterStartTimerRef.current !== null) {
+      window.clearTimeout(encounterStartTimerRef.current)
+      encounterStartTimerRef.current = null
+    }
+
+    if (
+      !currentPost ||
+      isCombatPhase ||
+      isEncounterActive ||
+      isPostCombatSummaryActive ||
+      isCombatReturnActive
+    ) {
+      return
+    }
+    if (!shouldStartEncounterForPost(currentPost)) {
+      return
+    }
+    if (
+      isDragging ||
+      swipeAnimation !== 'none' ||
+      settleTimerRef.current !== null ||
+      Math.abs(dragOffsetRef.current) > 0.5
+    ) {
+      return
+    }
+
+    const postId = currentPost.id
+    encounterStartTimerRef.current = window.setTimeout(() => {
+      encounterStartTimerRef.current = null
+      if (visiblePostIdRef.current !== postId) {
+        return
+      }
+      if (draggingRef.current || Math.abs(dragOffsetRef.current) > 0.5) {
+        return
+      }
+      startEvilEncounter(postId, onCombatEntranceComplete)
+    }, ENCOUNTER_START_DELAY_MS)
+  }, [
+    currentPost,
+    isDragging,
+    isCombatPhase,
+    isEncounterActive,
+    isPostCombatSummaryActive,
+    isCombatReturnActive,
+    onCombatEntranceComplete,
+    shouldStartEncounterForPost,
+    swipeAnimation,
+    startEvilEncounter,
+  ])
 
   useEffect(() => {
     if (!isInteractionLocked) {
@@ -308,6 +483,22 @@ function FeedScreen({
     window.location.reload()
   }, [])
 
+  const handleContinueAfterSummary = useCallback(() => {
+    if (isCombatReturnActive) {
+      return
+    }
+    setIsCombatReturnActive(true)
+    if (returnTimerRef.current !== null) {
+      window.clearTimeout(returnTimerRef.current)
+    }
+    returnTimerRef.current = window.setTimeout(() => {
+      setIsCombatReturnActive(false)
+      setPostCombatSummary(null)
+      onCombatSummaryContinue()
+      returnTimerRef.current = null
+    }, COMBAT_RETURN_MS)
+  }, [isCombatReturnActive, onCombatSummaryContinue])
+
   const finalizeSwipe = useCallback(() => {
     if (!connected || isFeedInteractionLocked) {
       setOffset(0)
@@ -324,22 +515,18 @@ function FeedScreen({
     }
 
     const cardHeight = viewportRef.current?.clientHeight ?? 1
-    const nextPostToTrigger = nextPost.type === 'evil' ? nextPost : null
     setSwipeAnimation('snap-forward')
     setOffset(-cardHeight)
     settleTimerRef.current = window.setTimeout(() => {
       setSwipeAnimation('none')
       onAdvance()
       setOffset(0)
-      if (nextPostToTrigger) {
-        startEvilEncounter(nextPostToTrigger.id)
-      }
       settleTimerRef.current = null
     }, 220)
-  }, [connected, isFeedInteractionLocked, nextPost, onAdvance, setOffset, startEvilEncounter])
+  }, [connected, isFeedInteractionLocked, nextPost, onAdvance, setOffset])
 
   const handlePointerDown: PointerEventHandler<HTMLDivElement> = (event) => {
-    if (!currentPost || !connected || isFeedInteractionLocked) {
+    if (!currentPost || !connected || isFeedInteractionLocked || isCurrentPostCombatTrigger) {
       return
     }
     const eventTarget = event.target as HTMLElement
@@ -464,6 +651,7 @@ function FeedScreen({
     isEncounterActive ? 'feed-screen-encounter' : '',
     isEncounterLockPhase ? 'feed-screen-lock-phase' : '',
     isBattleMockupActive && !isEncounterActive ? 'feed-screen-battle-mockup' : '',
+    isReturnTransitionActive ? 'feed-screen-returning' : '',
     isMenuOpen ? 'feed-screen-menu-open' : '',
   ]
     .filter(Boolean)
@@ -509,13 +697,14 @@ function FeedScreen({
           </div>
         </header>
 
-        <div className="phone-rig">
-          <section className="phone-frame">
-            <header className="phone-status">
-              <span>THE FEED</span>
-              <span>PHASE {serverState?.phase ?? 'feed'}</span>
-              <span>{socketStatus}</span>
-            </header>
+        <div className="phone-rig-anchor">
+          <div className="phone-rig">
+            <section className="phone-frame">
+              <header className="phone-status">
+                <span>THE FEED</span>
+                <span>PHASE {phase}</span>
+                <span>{socketStatus}</span>
+              </header>
 
             <div
               className="phone-feed phone-feed-viewport"
@@ -530,7 +719,7 @@ function FeedScreen({
               {currentPost ? (
                 <div className="feed-page feed-page-current" style={currentStyle}>
                   {currentPost.type === 'evil' ? (
-                    <EvilPost post={currentPost} />
+                    <EvilPost post={currentPost} isActive />
                   ) : (
                     <Post post={currentPost} />
                   )}
@@ -539,23 +728,32 @@ function FeedScreen({
 
               {nextPost ? (
                 <div className="feed-page feed-page-next" style={nextStyle}>
-                  {nextPost.type === 'evil' ? <EvilPost post={nextPost} /> : <Post post={nextPost} />}
+                  {nextPost.type === 'evil' ? (
+                    <EvilPost post={nextPost} isActive={false} />
+                  ) : (
+                    <Post post={nextPost} />
+                  )}
                 </div>
               ) : null}
             </div>
 
-            <footer className="phone-nav">
-              <span>SID {sessionId ? sessionId.slice(0, 8) : 'pending'}</span>
-              <span>DRAG UP TO SCROLL</span>
-              <span>PHASE {serverState?.phase ?? 'feed'}</span>
-            </footer>
-          </section>
+              <footer className="phone-nav">
+                <span>SID {sessionId ? sessionId.slice(0, 8) : 'pending'}</span>
+                <span>DRAG UP TO SCROLL</span>
+                <span>PHASE {phase}</span>
+              </footer>
+            </section>
+          </div>
         </div>
 
         {isBattleMockupActive ? (
           <section
             className={`battle-mockup ${
-              isEncounterActive ? 'battle-mockup-transition' : 'battle-mockup-live'
+              isEncounterActive
+                ? 'battle-mockup-transition'
+                : isReturnTransitionActive
+                  ? 'battle-mockup-return'
+                  : 'battle-mockup-live'
             }`}
             style={encounterBurstStyle}
             aria-label="Battle interface mockup"
@@ -563,16 +761,44 @@ function FeedScreen({
             <header className="battle-hud">
               <div className="battle-health">
                 <span className="battle-label">
-                  ENEMY // {combatEnemy?.name?.toUpperCase() ?? 'SIGNAL_REAPER'}
+                  ENEMY //{' '}
+                  {(
+                    isPostCombatSummaryActive
+                      ? postCombatSummary?.enemyName
+                      : combatEnemy?.name
+                  )?.toUpperCase() ?? 'SIGNAL_REAPER'}
                 </span>
                 <div className="battle-health-track" role="img" aria-label="Enemy health">
-                  <span className="battle-health-fill" style={{ width: `${combatEnemyHpPercent}%` }} />
+                  <span
+                    className="battle-health-fill"
+                    style={{ width: `${isPostCombatSummaryActive ? 0 : combatEnemyHpPercent}%` }}
+                  />
                 </div>
               </div>
             </header>
 
-            <aside className="battle-chat" aria-label="Combat chat">
-              {combatLog.length === 0 ? (
+            <aside
+              className={`battle-chat ${isPostCombatSummaryActive ? 'battle-chat-summary' : ''}`}
+              aria-label="Combat chat"
+            >
+              {isPostCombatSummaryActive && postCombatSummary ? (
+                <div className="battle-summary-panel">
+                  <p className="battle-summary-title">
+                    {postCombatSummary.result === 'lose' ? 'DEFEAT' : 'VICTORY'}
+                  </p>
+                  <p className="battle-summary-subtitle">COMBAT REPORT</p>
+                  <p>TARGET // {postCombatSummary.enemyName.toUpperCase()}</p>
+                  <p>TURNS // {postCombatSummary.turns}</p>
+                  <p>DAMAGE DEALT // {postCombatSummary.totalDamageDealt}</p>
+                  <p>DAMAGE TAKEN // {postCombatSummary.totalDamageTaken}</p>
+                  <p>
+                    REWARDS //{' '}
+                    {postCombatSummary.rewards.length > 0
+                      ? postCombatSummary.rewards.map((reward) => reward.toUpperCase()).join(', ')
+                      : 'NONE'}
+                  </p>
+                </div>
+              ) : combatLog.length === 0 ? (
                 <>
                   <p>SYS: hostile channel stabilized.</p>
                   <p>VOID: I can see you scrolling.</p>
@@ -586,54 +812,72 @@ function FeedScreen({
                   </p>
                 ))
               )}
-              {latestCombatTurn ? (
+              {latestCombatTurn && !isPostCombatSummaryActive ? (
                 <p>
                   HIT Δ ENEMY -{latestCombatTurn.playerDamage} / YOU -{latestCombatTurn.enemyDamage}
                 </p>
               ) : null}
-              {latestCombatResult === 'win' ? <p>SYS: target neutralized. returning to feed…</p> : null}
-              {latestCombatResult === 'lose' ? <p>SYS: attention collapse detected.</p> : null}
+              {latestCombatResult === 'win' && !isPostCombatSummaryActive ? (
+                <p>SYS: target neutralized.</p>
+              ) : null}
+              {latestCombatResult === 'lose' && !isPostCombatSummaryActive ? (
+                <p>SYS: attention collapse detected.</p>
+              ) : null}
             </aside>
 
             <footer className="battle-actions">
-              <button type="button" onClick={() => onCombatAction('attack')} disabled={!canActInCombat}>
-                Attack
-              </button>
-              <button type="button" onClick={() => onCombatAction('block')} disabled={!canActInCombat}>
-                Block
-              </button>
-              <button type="button" onClick={() => onCombatAction('parry')} disabled={!canActInCombat}>
-                Parry
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedExploit?.id) {
-                    onCombatAction('exploit', selectedExploit.id)
-                  }
-                }}
-                disabled={
-                  !canActInCombat ||
-                  !selectedExploit ||
-                  (selectedExploit.id ? (disabledExploits[selectedExploit.id] ?? 0) > 0 : true)
-                }
-              >
-                Exploit
-              </button>
-              <button
-                type="button"
-                disabled={!isCombatPhase}
-                onClick={() => {
-                  if (!availableExploitIds.length) {
-                    return
-                  }
-                  const currentIndex = availableExploitIds.indexOf(effectiveSelectedExploitId)
-                  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % availableExploitIds.length
-                  setSelectedExploitId(availableExploitIds[nextIndex])
-                }}
-              >
-                {selectedExploit?.name ?? 'Select Exploit'}
-              </button>
+              {isPostCombatSummaryActive ? (
+                <button
+                  type="button"
+                  className="battle-summary-continue"
+                  onClick={handleContinueAfterSummary}
+                  disabled={isCombatReturnActive}
+                >
+                  {isCombatReturnActive ? 'Returning...' : 'Continue to Feed'}
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={() => onCombatAction('attack')} disabled={!canActInCombat}>
+                    Attack
+                  </button>
+                  <button type="button" onClick={() => onCombatAction('block')} disabled={!canActInCombat}>
+                    Block
+                  </button>
+                  <button type="button" onClick={() => onCombatAction('parry')} disabled={!canActInCombat}>
+                    Parry
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedExploit?.id) {
+                        onCombatAction('exploit', selectedExploit.id)
+                      }
+                    }}
+                    disabled={
+                      !canActInCombat ||
+                      !selectedExploit ||
+                      (selectedExploit.id ? (disabledExploits[selectedExploit.id] ?? 0) > 0 : true)
+                    }
+                  >
+                    Exploit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isCombatPhase}
+                    onClick={() => {
+                      if (!availableExploitIds.length) {
+                        return
+                      }
+                      const currentIndex = availableExploitIds.indexOf(effectiveSelectedExploitId)
+                      const nextIndex =
+                        currentIndex < 0 ? 0 : (currentIndex + 1) % availableExploitIds.length
+                      setSelectedExploitId(availableExploitIds[nextIndex])
+                    }}
+                  >
+                    {selectedExploit?.name ?? 'Select Exploit'}
+                  </button>
+                </>
+              )}
             </footer>
           </section>
         ) : null}

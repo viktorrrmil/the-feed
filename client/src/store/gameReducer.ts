@@ -102,6 +102,9 @@ export interface GameState {
   sessionId: string | null
   serverState: ServerState | null
   feedPosts: FeedPost[]
+  pendingCombatStart: boolean
+  pendingCombatEnemyId: string | null
+  combatSummaryPending: boolean
   socketStatus: SocketStatus
   isCreatingSession: boolean
   error: string | null
@@ -116,6 +119,8 @@ type GameAction =
   | { type: 'SESSION_CREATE_FAILURE'; payload?: string }
   | { type: 'FEED_SCROLL_FAILURE'; payload: string }
   | { type: 'FEED_ADVANCE' }
+  | { type: 'COMBAT_ENTRANCE_COMPLETE' }
+  | { type: 'COMBAT_SUMMARY_CONTINUE' }
   | { type: 'SOCKET_STATUS'; payload: SocketStatus }
   | { type: 'SOCKET_MESSAGE'; payload: SocketMessage }
 
@@ -124,6 +129,9 @@ export const initialGameState: GameState = {
   sessionId: null,
   serverState: null,
   feedPosts: [],
+  pendingCombatStart: false,
+  pendingCombatEnemyId: null,
+  combatSummaryPending: false,
   socketStatus: 'disconnected',
   isCreatingSession: false,
   error: null,
@@ -147,6 +155,9 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         sessionId: action.payload?.sessionId ?? null,
         serverState,
         feedPosts: [],
+        pendingCombatStart: false,
+        pendingCombatEnemyId: null,
+        combatSummaryPending: false,
         phase: typeof serverState?.phase === 'string' ? serverState.phase : 'feed',
         isCreatingSession: false,
         error: null,
@@ -171,6 +182,24 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         ...state,
         feedPosts: state.feedPosts.slice(1),
       }
+    case 'COMBAT_ENTRANCE_COMPLETE':
+      return {
+        ...state,
+        phase: state.pendingCombatStart ? 'combat' : state.phase,
+        pendingCombatStart: false,
+        pendingCombatEnemyId: null,
+        combatSummaryPending: false,
+        latestCombatTurn: null,
+        latestCombatResult: null,
+      }
+    case 'COMBAT_SUMMARY_CONTINUE':
+      return {
+        ...state,
+        combatSummaryPending: false,
+        phase: state.phase === 'combat' ? 'feed' : state.phase,
+        latestCombatTurn: null,
+        latestCombatResult: null,
+      }
     case 'SOCKET_STATUS':
       return {
         ...state,
@@ -186,14 +215,32 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       }
 
       if (action.payload?.type === 'STATE_UPDATE' && action.payload.state) {
-        const phase = action.payload.state.phase ?? state.phase
+        const serverPhase = action.payload.state.phase
+        const phase =
+          serverPhase === 'game_over'
+            ? 'game_over'
+            : serverPhase === 'combat'
+              ? state.pendingCombatStart
+                ? state.phase
+                : 'combat'
+              : serverPhase === 'feed'
+                ? state.phase === 'combat' && !state.combatSummaryPending
+                  ? 'feed'
+                  : state.phase
+                : state.phase
         return {
           ...state,
           serverState: action.payload.state,
           phase,
-          latestCombatTurn: phase === 'combat' ? state.latestCombatTurn : null,
+          pendingCombatStart: serverPhase === 'combat' ? state.pendingCombatStart : false,
+          pendingCombatEnemyId: serverPhase === 'combat' ? state.pendingCombatEnemyId : null,
+          combatSummaryPending: serverPhase === 'game_over' ? false : state.combatSummaryPending,
+          latestCombatTurn: phase === 'combat' || state.pendingCombatStart ? state.latestCombatTurn : null,
           latestCombatResult:
-            phase === 'combat' || phase === 'game_over'
+            phase === 'combat' ||
+            phase === 'game_over' ||
+            state.pendingCombatStart ||
+            state.combatSummaryPending
               ? state.latestCombatResult
               : null,
         }
@@ -202,10 +249,9 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       if (action.payload?.type === 'COMBAT_START') {
         return {
           ...state,
-          phase: 'combat',
+          pendingCombatStart: true,
+          pendingCombatEnemyId: action.payload.enemy?.id ?? null,
           error: null,
-          latestCombatTurn: null,
-          latestCombatResult: null,
         }
       }
 
@@ -220,6 +266,8 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       if (action.payload?.type === 'COMBAT_END') {
         return {
           ...state,
+          phase: state.phase === 'combat' ? 'combat' : state.phase,
+          combatSummaryPending: action.payload.result === 'win',
           latestCombatResult: action.payload.result ?? null,
           error: null,
         }
@@ -233,6 +281,7 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
             typeof action.payload.score === 'number'
               ? action.payload.score
               : state.gameOverScore,
+          combatSummaryPending: false,
           latestCombatResult: 'lose',
         }
       }

@@ -15,16 +15,22 @@ function App() {
     createSession,
     scrollFeed,
     advanceFeed,
+    completeCombatEntrance,
+    continueAfterCombatSummary,
     sendCombatAction,
     latestCombatTurn,
     latestCombatResult,
     gameOverScore,
+    pendingCombatStart,
+    pendingCombatEnemyId,
+    combatSummaryPending,
   } = useGameState()
 
   if (phase === 'feed' || phase === 'combat') {
     const score = typeof serverState?.score === 'number' ? serverState.score : 0
     return (
       <FeedScreen
+        phase={phase}
         sessionId={sessionId}
         serverState={serverState}
         socketStatus={socketStatus}
@@ -32,8 +38,13 @@ function App() {
         score={score}
         onScroll={scrollFeed}
         onAdvance={advanceFeed}
+        onCombatEntranceComplete={completeCombatEntrance}
+        onCombatSummaryContinue={continueAfterCombatSummary}
         latestCombatTurn={latestCombatTurn}
         latestCombatResult={latestCombatResult}
+        pendingCombatStart={pendingCombatStart}
+        pendingCombatEnemyId={pendingCombatEnemyId}
+        combatSummaryPending={combatSummaryPending}
         onCombatAction={sendCombatAction}
       />
     )

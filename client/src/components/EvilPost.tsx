@@ -3,9 +3,10 @@ import type { FeedPost } from '../store/gameReducer'
 
 interface EvilPostProps {
   post: FeedPost
+  isActive?: boolean
 }
 
-function EvilPost({ post }: EvilPostProps) {
+function EvilPost({ post, isActive = true }: EvilPostProps) {
   const [liked, setLiked] = useState(false)
   const [likes, setLikes] = useState(post.content.likes ?? 0)
 
@@ -22,7 +23,7 @@ function EvilPost({ post }: EvilPostProps) {
   }
 
   return (
-    <article className="post-card post-card-evil" role="alert">
+    <article className={`post-card post-card-evil ${isActive ? 'post-card-evil-active' : ''}`} role="alert">
       <header className="post-head">
         <p>{post.content.author ?? 'Corrupted Broadcast'}</p>
         <span>{post.content.handle ?? '@void_signal'}</span>

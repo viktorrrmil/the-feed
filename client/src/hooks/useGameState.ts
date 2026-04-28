@@ -33,6 +33,14 @@ export const useGameState = () => {
     dispatch({ type: 'FEED_ADVANCE' })
   }, [])
 
+  const completeCombatEntrance = useCallback(() => {
+    dispatch({ type: 'COMBAT_ENTRANCE_COMPLETE' })
+  }, [])
+
+  const continueAfterCombatSummary = useCallback(() => {
+    dispatch({ type: 'COMBAT_SUMMARY_CONTINUE' })
+  }, [])
+
   const sendCombatAction = useCallback(
     (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string): boolean => {
       const sent = sendMessage({ type: 'COMBAT_ACTION', action, exploitId })
@@ -73,6 +81,8 @@ export const useGameState = () => {
     createSession,
     scrollFeed,
     advanceFeed,
+    completeCombatEntrance,
+    continueAfterCombatSummary,
     sendCombatAction,
   }
 }
