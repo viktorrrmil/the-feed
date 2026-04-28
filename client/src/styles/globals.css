@@ -25,10 +25,12 @@ body {
   font-family: var(--font-ui);
   color: var(--text);
   background: radial-gradient(circle at top, #161626 0%, #0b0b12 70%);
+  overflow-x: hidden;
 }
 
 html {
-  scrollbar-gutter: stable;
+  min-height: 100%;
+  background: radial-gradient(circle at top, #161626 0%, #0b0b12 70%);
 }
 
 button {
@@ -167,8 +169,10 @@ h1 {
 
 .start-screen {
   position: relative;
-  align-items: flex-start;
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   padding-top: clamp(2.8rem, 7.5vh, 6rem);
   overflow: hidden;
   background: radial-gradient(circle at 20% 18%, rgba(255, 118, 26, 0.2), transparent 45%), #08070d;
@@ -246,6 +250,7 @@ h1 {
 .start-panel {
   position: relative;
   z-index: 2;
+  margin-top: 300px;
   width: min(760px, 100%);
   border-radius: 0;
   border: 2px solid #5a4054;
@@ -258,6 +263,15 @@ h1 {
     0 24px 80px rgba(0, 0, 0, 0.55);
   text-align: center;
   animation: start-panel-breathe 6.6s cubic-bezier(0.42, 0.08, 0.58, 0.92) infinite;
+}
+
+.start-logo-wrap {
+  position: absolute;
+  margin-top: -100px;
+  z-index: 2;
+  width: min(860px, 100%);
+  height: clamp(430px, 24vh, 230px);
+  pointer-events: none;
 }
 
 .start-eyebrow {
@@ -313,7 +327,6 @@ h1 {
 
 .start-subtitle {
   margin: 1.2rem auto 2rem;
-  max-width: 38ch;
   color: #d2c3dd;
   font-family: var(--font-mono);
   font-size: 1.5rem;
@@ -356,6 +369,52 @@ h1 {
   box-shadow:
     inset 0 0 0 2px rgba(230, 210, 192, 0.2),
     0 3px 0 #352822;
+}
+
+.start-menu-buttons {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.start-menu-button {
+  border: 2px solid #825574;
+  border-radius: 0;
+  background: #2d223a;
+  color: #f5e9ff;
+  min-height: 46px;
+  padding: 0.55rem 0.7rem;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 0 0 2px #171120,
+    0 3px 0 #120f19;
+}
+
+.start-menu-button:not(:disabled):hover {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 0 0 2px #171120,
+    0 2px 0 #120f19;
+}
+
+.start-menu-button:disabled {
+  border-color: #6d566c;
+  background: #2a2531;
+  color: #b3a5c2;
+  cursor: not-allowed;
+}
+
+.start-menu-button-github {
+  border-color: #5f7ca6;
+  background: #202a3b;
+  color: #dfeeff;
 }
 
 .start-status {
