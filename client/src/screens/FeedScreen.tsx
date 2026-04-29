@@ -7,6 +7,7 @@ import {
   type PointerEventHandler,
 } from 'react'
 import EvilPost from '../components/EvilPost'
+import ProfileCard from '../components/ProfileCard'
 import Post from '../components/Post'
 import type {
   CombatTurnResult,
@@ -700,10 +701,10 @@ function FeedScreen({
         <div className="phone-rig-anchor">
           <div className="phone-rig">
             <section className="phone-frame">
-              <header className="phone-status">
-                <span>THE FEED</span>
-                <span>PHASE {phase}</span>
-                <span>{socketStatus}</span>
+              <header className="phone-camera-rail" aria-hidden="true">
+                <span className="phone-camera-module">
+                  <span className="phone-camera-lens" />
+                </span>
               </header>
 
             <div
@@ -737,10 +738,10 @@ function FeedScreen({
               ) : null}
             </div>
 
-              <footer className="phone-nav">
-                <span>SID {sessionId ? sessionId.slice(0, 8) : 'pending'}</span>
-                <span>DRAG UP TO SCROLL</span>
-                <span>PHASE {phase}</span>
+              <footer className="phone-home-nav" aria-hidden="true">
+                <span className="phone-home-button">
+                  <span className="phone-home-glyph" />
+                </span>
               </footer>
             </section>
           </div>
@@ -776,6 +777,23 @@ function FeedScreen({
                 </div>
               </div>
             </header>
+
+            <ProfileCard
+                className="battle-profile-card"
+                name=""
+                title=""
+                handle=""
+                status=""
+                contactText=""
+                avatarUrl="../../public/avatar.png"
+                showUserInfo={false}
+                enableTilt={true}
+                enableMobileTilt={false}
+                onContactClick={() => console.log('Contact clicked')}
+                behindGlowColor="rgba(125, 190, 255, 0.67)"
+                behindGlowEnabled={false}
+                innerGradient="linear-gradient(145deg,#60496e8c 0%,#71C4FF44 100%)"
+            />
 
             <aside
               className={`battle-chat ${isPostCombatSummaryActive ? 'battle-chat-summary' : ''}`}
