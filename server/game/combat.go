@@ -2,7 +2,6 @@ package game
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"time"
 )
@@ -22,6 +21,7 @@ func StartCombat(state *GameState, enemyID string) (*Enemy, error) {
 		Enemy:            enemy,
 		EnemyHP:          enemy.MaxHP,
 		Turn:             "player",
+		TurnPhase:        "player_select",
 		TurnCount:        1,
 		EnemyDebuffs:     map[string]int{},
 		PlayerDebuffs:    map[string]int{},
@@ -32,189 +32,283 @@ func StartCombat(state *GameState, enemyID string) (*Enemy, error) {
 	return enemy, nil
 }
 
+const (
+	actionAttack  = "attack"
+	actionBlock   = "block"
+	actionParry   = "parry"
+	actionExploit = "exploit"
+	actionIdle    = "idle"
+)
+
 func ProcessCombatTurn(state *GameState, action PlayerAction, rng *rand.Rand) (*TurnResult, string, error) {
+	enemyAction, err := PreviewEnemyCombatAction(state, action, rng)
+	if err != nil {
+		return nil, "", err
+	}
+	return ProcessCombatTurnWithEnemyAction(state, action, enemyAction, rng)
+}
+
+func PreviewEnemyCombatAction(state *GameState, playerAction PlayerAction, rng *rand.Rand) (*CombatAction, error) {
+	if state.Phase != "combat" || state.Combat == nil {
+		return nil, fmt.Errorf("combat action is unavailable in phase %s", state.Phase)
+	}
+	if state.Combat.Turn != "player" {
+		return nil, fmt.Errorf("combat turn is currently %s", state.Combat.Turn)
+	}
+	if _, err := buildPlayerCombatAction(state, playerAction, rng); err != nil {
+		return nil, err
+	}
+	enemyAction := decideEnemyAction(state, playerAction, rng)
+	state.Combat.PendingEnemyAction = &enemyAction
+	return &enemyAction, nil
+}
+
+func ProcessCombatTurnWithEnemyAction(
+	state *GameState,
+	playerSelection PlayerAction,
+	enemySelection *CombatAction,
+	rng *rand.Rand,
+) (*TurnResult, string, error) {
 	if state.Phase != "combat" || state.Combat == nil {
 		return nil, "", fmt.Errorf("combat action is unavailable in phase %s", state.Phase)
 	}
 	if state.Combat.Turn != "player" {
 		return nil, "", fmt.Errorf("combat turn is currently %s", state.Combat.Turn)
 	}
-
 	advanceStatusEffects(state)
+	combat := state.Combat
 
-	turnResult, err := ProcessPlayerAction(state, action, rng)
+	playerAction, err := buildPlayerCombatAction(state, playerSelection, rng)
 	if err != nil {
 		return nil, "", err
 	}
-
-	ended, result := CheckCombatEnd(state)
-	if !ended {
-		state.Combat.Turn = "enemy"
-		ProcessEnemyTurn(state, turnResult, rng)
-		ended, result = CheckCombatEnd(state)
+	var enemyAction CombatAction
+	if enemySelection != nil {
+		enemyAction = *enemySelection
+	} else {
+		enemyAction = decideEnemyAction(state, playerSelection, rng)
 	}
+	combat.PendingEnemyAction = nil
+
+	turnResult := resolveSymmetricTurn(state, playerAction, enemyAction)
+	combat.LastEnemyAction = enemyAction.Type
+	combat.LastEnemyActionValue = enemyAction.Value
+	combat.LastEnemyActionCost = enemyAction.Cost
+
+	_, result := CheckCombatEnd(state)
 
 	if state.Phase == "combat" && state.Combat != nil {
 		state.Combat.Turn = "player"
+		state.Combat.TurnPhase = "player_select"
 		state.Combat.TurnCount++
-		state.Combat.PlayerBlock = false
-		state.Combat.PlayerParry = false
 		state.Combat.Log = append(state.Combat.Log, *turnResult)
 	}
 
 	return turnResult, result, nil
 }
 
-func ProcessPlayerAction(state *GameState, action PlayerAction, rng *rand.Rand) (*TurnResult, error) {
-	combat := state.Combat
-	if combat == nil {
-		return nil, fmt.Errorf("combat state is missing")
-	}
-
-	result := &TurnResult{
-		PlayerAction:    action.Action,
-		EnemyAction:     "",
-		PlayerDamage:    0,
-		EnemyDamage:     0,
-		EnemyHP:         combat.EnemyHP,
-		PlayerAttention: state.Attention,
-		Effects:         []TurnEffect{},
-	}
-
+func buildPlayerCombatAction(state *GameState, action PlayerAction, rng *rand.Rand) (CombatAction, error) {
 	switch action.Action {
-	case "attack":
-		damage := 12 + state.Noise*2 + rng.Intn(4)
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage = damage
-		result.EnemyHP = combat.EnemyHP
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  "Direct hit",
-		})
-		combat.PlayerBlockStreak = 0
-	case "block":
-		combat.PlayerBlock = true
-		combat.PlayerParry = false
-		combat.PlayerBlockStreak++
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "guard",
-			Amount: 0,
-			Label:  "Brace",
-		})
-	case "parry":
-		combat.PlayerParry = true
-		combat.PlayerBlock = false
-		combat.PlayerBlockStreak = 0
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "parry",
-			Amount: 0,
-			Label:  "Counter stance",
-		})
-	case "exploit":
+	case actionAttack:
+		return CombatAction{Type: actionAttack, Label: "Attack", Cost: 9, Value: 9}, nil
+	case actionBlock:
+		return CombatAction{Type: actionBlock, Label: "Block", Cost: 5, Value: 5}, nil
+	case actionParry:
+		return CombatAction{Type: actionParry, Label: "Parry", Cost: 4, Value: 4}, nil
+	case actionExploit:
 		exploit := findEquippedExploit(state, action.ExploitID)
 		if exploit == nil {
-			return nil, fmt.Errorf("exploit %q is not equipped", action.ExploitID)
+			return CombatAction{}, fmt.Errorf("exploit %q is not equipped", action.ExploitID)
 		}
-		if combat.DisabledExploits[exploit.ID] > 0 {
-			return nil, fmt.Errorf("exploit %q is currently disabled", exploit.ID)
+		if state.Combat.DisabledExploits[exploit.ID] > 0 {
+			return CombatAction{}, fmt.Errorf("exploit %q is currently disabled", exploit.ID)
 		}
-		applyPlayerExploit(state, exploit, result, rng)
-		combat.LastPlayerExploit = exploit.ID
-		combat.PlayerBlockStreak = 0
+		return CombatAction{
+			Type:      actionExploit,
+			Label:     exploit.Name,
+			Cost:      8,
+			Value:     exploitDamageValue(exploit.ID, state.Noise, rng),
+			ExploitID: exploit.ID,
+		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported combat action %q", action.Action)
+		return CombatAction{}, fmt.Errorf("unsupported combat action %q", action.Action)
 	}
-
-	return result, nil
 }
 
-func ProcessEnemyTurn(state *GameState, result *TurnResult, rng *rand.Rand) {
+func decideEnemyAction(state *GameState, playerSelection PlayerAction, rng *rand.Rand) CombatAction {
 	combat := state.Combat
-	if combat == nil {
-		return
+	if combat == nil || combat.Enemy == nil {
+		return CombatAction{Type: actionIdle, Label: "Idle", Cost: 0, Value: 0}
 	}
-
-	ability := DecideEnemyAbility(state, rng)
-	baseDamage := rollDamage(ability, combat.Enemy.BaseAttack, rng)
-	finalDamage := baseDamage
-	parried := false
-
-	if combat.PlayerParry && !ability.IgnoreParry {
-		parried = true
-		finalDamage = 0
-		parryDamage := 8 + state.Noise
-		combat.EnemyHP = max(combat.EnemyHP-parryDamage, 0)
-		result.PlayerDamage += parryDamage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: parryDamage,
-			Label:  "Parry return",
-		})
-	} else if combat.PlayerBlock && !ability.BypassBlock {
-		finalDamage = int(math.Max(1, float64(baseDamage/2)))
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "block",
-			Amount: baseDamage - finalDamage,
-			Label:  "Blocked",
-		})
-	}
-
-	if finalDamage > 0 {
-		state.Attention = max(state.Attention-finalDamage, 0)
-		result.EnemyDamage = finalDamage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "damage",
-			Amount: finalDamage,
-			Label:  "Enemy strike",
-		})
-	}
-
-	if ability.SelfHeal > 0 {
-		combat.EnemyHP = min(combat.EnemyHP+ability.SelfHeal, combat.Enemy.MaxHP)
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "heal",
-			Amount: ability.SelfHeal,
-			Label:  "Enemy recovers",
-		})
-	}
-
-	if ability.DisableExploitTurns > 0 {
-		if disabled := pickRandomEquippedExploitID(state, rng); disabled != "" {
-			combat.DisabledExploits[disabled] = ability.DisableExploitTurns
-			result.Effects = append(result.Effects, TurnEffect{
-				Target: "player",
-				Kind:   "disable",
-				Amount: ability.DisableExploitTurns,
-				Label:  fmt.Sprintf("%s disabled", disabled),
-			})
+	enemyAT := combat.EnemyHP
+	candidates := make([]CombatAction, 0, 4)
+	pushIfAffordable := func(action CombatAction) {
+		if enemyAT >= action.Cost {
+			candidates = append(candidates, action)
 		}
 	}
-
-	if ability.NoiseDelta != 0 {
-		state.Noise = clamp(state.Noise+ability.NoiseDelta, 1, 9)
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "noise",
-			Amount: ability.NoiseDelta,
-			Label:  "Noise shifted",
-		})
+	pushIfAffordable(CombatAction{Type: actionAttack, Label: "Attack", Cost: 9, Value: 9})
+	pushIfAffordable(CombatAction{Type: actionBlock, Label: "Block", Cost: 5, Value: 5})
+	pushIfAffordable(CombatAction{Type: actionParry, Label: "Parry", Cost: 4, Value: 4})
+	pushIfAffordable(CombatAction{
+		Type:  actionExploit,
+		Label: "Exploit",
+		Cost:  8,
+		Value: 7 + combat.Enemy.BaseAttack/2,
+	})
+	if len(candidates) == 0 {
+		return CombatAction{Type: actionIdle, Label: "Idle", Cost: 0, Value: 0}
 	}
 
-	result.EnemyAction = ability.Name
-	if parried {
-		result.EnemyAction = ability.Name + " (parried)"
+	playerType := playerSelection.Action
+	if playerType == actionAttack || playerType == actionExploit {
+		roll := rng.Intn(100)
+		for _, action := range candidates {
+			if action.Type == actionParry && roll < 35 {
+				return action
+			}
+		}
+		for _, action := range candidates {
+			if action.Type == actionBlock && roll < 70 {
+				return action
+			}
+		}
+		for _, action := range candidates {
+			if action.Type == actionAttack {
+				return action
+			}
+		}
 	}
-	combat.LastEnemyAction = ability.ID
+	if enemyAT <= combat.Enemy.MaxHP/3 {
+		for _, action := range candidates {
+			if action.Type == actionBlock {
+				return action
+			}
+		}
+		for _, action := range candidates {
+			if action.Type == actionParry {
+				return action
+			}
+		}
+	}
+	return candidates[rng.Intn(len(candidates))]
+}
+
+func exploitDamageValue(exploitID string, noise int, rng *rand.Rand) int {
+	switch exploitID {
+	case "focused_reply":
+		return 11 + noise
+	case "growth_hack":
+		return 8 + noise + rng.Intn(4)
+	case "volatility_engine":
+		return 6 + noise + rng.Intn(8)
+	case "bait_loop":
+		return 10 + noise
+	default:
+		return 9 + noise
+	}
+}
+
+func resolveSymmetricTurn(state *GameState, playerAction CombatAction, enemyAction CombatAction) *TurnResult {
+	combat := state.Combat
+	result := &TurnResult{
+		PlayerAction:      playerAction.Label,
+		EnemyAction:       enemyAction.Label,
+		PlayerActionCost:  playerAction.Cost,
+		EnemyActionCost:   enemyAction.Cost,
+		PlayerActionValue: playerAction.Value,
+		EnemyActionValue:  enemyAction.Value,
+		Effects:           []TurnEffect{},
+	}
+	combat.PlayerBlock = playerAction.Type == actionBlock
+	combat.PlayerParry = playerAction.Type == actionParry
+	combat.EnemyBlock = enemyAction.Type == actionBlock
+	combat.EnemyParry = enemyAction.Type == actionParry
+	result.PlayerState = stateLabel(combat.PlayerBlock, combat.PlayerParry)
+	result.EnemyState = stateLabel(combat.EnemyBlock, combat.EnemyParry)
+
+	spendPlayer := min(playerAction.Cost, state.Attention)
+	spendEnemy := min(enemyAction.Cost, combat.EnemyHP)
+	state.Attention = max(state.Attention-spendPlayer, 0)
+	combat.EnemyHP = max(combat.EnemyHP-spendEnemy, 0)
+	result.PlayerATSpent = spendPlayer
+	result.EnemyATSpent = spendEnemy
+	result.Effects = append(result.Effects,
+		TurnEffect{Target: "player", Kind: "cost", Amount: spendPlayer, Label: fmt.Sprintf("Player spent %d AT", spendPlayer)},
+		TurnEffect{Target: "enemy", Kind: "cost", Amount: spendEnemy, Label: fmt.Sprintf("Enemy spent %d AT", spendEnemy)},
+	)
+
+	playerDamage, playerRefund, playerPenalty, playerLabels := resolveOffense(playerAction, enemyAction)
+	enemyDamage, enemyRefund, enemyPenalty, enemyLabels := resolveOffense(enemyAction, playerAction)
+
+	for _, label := range playerLabels {
+		result.Effects = append(result.Effects, TurnEffect{Target: "enemy", Kind: "resolve", Amount: playerDamage, Label: label})
+	}
+	for _, label := range enemyLabels {
+		result.Effects = append(result.Effects, TurnEffect{Target: "player", Kind: "resolve", Amount: enemyDamage, Label: label})
+	}
+
+	if playerDamage > 0 {
+		combat.EnemyHP = max(combat.EnemyHP-playerDamage, 0)
+	}
+	if enemyDamage > 0 {
+		state.Attention = max(state.Attention-enemyDamage, 0)
+	}
+	state.Attention = min(state.Attention+playerRefund, state.MaxAttention)
+	combat.EnemyHP = min(combat.EnemyHP+enemyRefund, combat.Enemy.MaxHP)
+	state.Attention = max(state.Attention-playerPenalty, 0)
+	combat.EnemyHP = max(combat.EnemyHP-enemyPenalty, 0)
+
+	result.PlayerDamage = playerDamage
+	result.EnemyDamage = enemyDamage
+	result.PlayerATRefund = playerRefund
+	result.EnemyATRefund = enemyRefund
+	result.PlayerPenaltyAT = playerPenalty
+	result.EnemyPenaltyAT = enemyPenalty
 	result.EnemyHP = combat.EnemyHP
+	result.EnemyAttention = combat.EnemyHP
 	result.PlayerAttention = state.Attention
+
+	return result
+}
+
+func resolveOffense(attacker CombatAction, defender CombatAction) (damage int, refund int, penalty int, labels []string) {
+	if attacker.Type != actionAttack && attacker.Type != actionExploit {
+		return 0, 0, 0, []string{fmt.Sprintf("%s held position", attacker.Label)}
+	}
+	attackValue := attacker.Value
+	switch defender.Type {
+	case actionBlock:
+		damage = max(attackValue-defender.Value, 0)
+		refund = damage
+		if damage == 0 {
+			return 0, 0, 0, []string{fmt.Sprintf("%s fully blocked (%d)", attacker.Label, defender.Value)}
+		}
+		return damage, refund, 0, []string{fmt.Sprintf("%s through block for %d", attacker.Label, damage)}
+	case actionParry:
+		if attackValue > defender.Value {
+			damage = attackValue - defender.Value
+			refund = damage
+			penalty = defender.Value
+			return damage, refund, penalty, []string{fmt.Sprintf("%s beaten parry: %d, penalty %d", attacker.Label, damage, penalty)}
+		}
+		penalty = defender.Value
+		return 0, 0, penalty, []string{fmt.Sprintf("%s parried and countered (%d)", attacker.Label, penalty)}
+	default:
+		damage = attackValue
+		refund = damage
+		return damage, refund, 0, []string{fmt.Sprintf("%s landed for %d", attacker.Label, damage)}
+	}
+}
+
+func stateLabel(isBlock bool, isParry bool) string {
+	if isBlock {
+		return "block"
+	}
+	if isParry {
+		return "parry"
+	}
+	return "none"
 }
 
 func CheckCombatEnd(state *GameState) (bool, string) {
@@ -257,79 +351,6 @@ func advanceStatusEffects(state *GameState) {
 		}
 		state.Combat.DisabledExploits[exploitID] = turns - 1
 	}
-}
-
-func applyPlayerExploit(state *GameState, exploit *Exploit, result *TurnResult, rng *rand.Rand) {
-	combat := state.Combat
-	if combat == nil {
-		return
-	}
-
-	switch exploit.ID {
-	case "focused_reply":
-		damage := 18 + state.Noise*2
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage += damage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  "Focused Reply",
-		})
-	case "deep_scroll":
-		heal := 14 + state.Noise
-		state.Attention = min(state.Attention+heal, state.MaxAttention)
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "player",
-			Kind:   "heal",
-			Amount: heal,
-			Label:  "Deep Scroll",
-		})
-	case "growth_hack":
-		damage := (10 + rng.Intn(6)) * state.Noise
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage += damage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  "Growth Hack",
-		})
-	case "volatility_engine":
-		multiplier := 0.5 + rng.Float64()*2
-		damage := int(float64(12+state.Noise*2) * multiplier)
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage += damage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  "Volatility Engine",
-		})
-	case "bait_loop":
-		damage := 15 + state.Noise
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage += damage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  "Bait Loop",
-		})
-	default:
-		damage := 10 + state.Noise
-		combat.EnemyHP = max(combat.EnemyHP-damage, 0)
-		result.PlayerDamage += damage
-		result.Effects = append(result.Effects, TurnEffect{
-			Target: "enemy",
-			Kind:   "damage",
-			Amount: damage,
-			Label:  exploit.Name,
-		})
-	}
-
-	result.EnemyHP = combat.EnemyHP
-	result.PlayerAttention = state.Attention
 }
 
 func findEquippedExploit(state *GameState, exploitID string) *Exploit {

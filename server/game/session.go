@@ -84,11 +84,45 @@ func (s *Session) HandleCombatAction(action PlayerAction) (*TurnResult, string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.State.Combat != nil {
+		s.State.Combat.TurnPhase = "resolving"
+	}
 	turn, combatResult, err := ProcessCombatTurn(s.State, action, s.rng)
 	if err != nil {
 		return nil, "", nil, err
 	}
 
+	return turn, combatResult, cloneState(s.State), nil
+}
+
+func (s *Session) PreviewEnemyAction(action PlayerAction) (*CombatAction, *GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State.Combat != nil {
+		s.State.Combat.TurnPhase = "enemy_thinking"
+	}
+	preview, err := PreviewEnemyCombatAction(s.State, action, s.rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	if s.State.Combat != nil {
+		s.State.Combat.TurnPhase = "enemy_reveal"
+	}
+	return preview, cloneState(s.State), nil
+}
+
+func (s *Session) ResolveCombatAction(action PlayerAction, enemyAction *CombatAction) (*TurnResult, string, *GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State.Combat != nil {
+		s.State.Combat.TurnPhase = "resolving"
+	}
+	turn, combatResult, err := ProcessCombatTurnWithEnemyAction(s.State, action, enemyAction, s.rng)
+	if err != nil {
+		return nil, "", nil, err
+	}
 	return turn, combatResult, cloneState(s.State), nil
 }
 
@@ -118,6 +152,10 @@ func cloneState(state *GameState) *GameState {
 		combatCloned.PlayerDebuffs = cloneIntMap(state.Combat.PlayerDebuffs)
 		combatCloned.DisabledExploits = cloneIntMap(state.Combat.DisabledExploits)
 		combatCloned.Log = append([]TurnResult(nil), state.Combat.Log...)
+		if state.Combat.PendingEnemyAction != nil {
+			pending := *state.Combat.PendingEnemyAction
+			combatCloned.PendingEnemyAction = &pending
+		}
 		cloned.Combat = &combatCloned
 	}
 

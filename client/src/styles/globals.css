@@ -905,7 +905,7 @@ h1 {
   padding: clamp(1rem, 2.8vw, 2.2rem);
   display: grid;
   grid-template-columns: 1fr minmax(240px, 300px);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
   gap: 1rem;
   background:
     repeating-linear-gradient(0deg, rgba(36, 38, 44, 0.45) 0 2px, rgba(27, 29, 34, 0.45) 2px 4px),
@@ -938,6 +938,7 @@ h1 {
 }
 
 .battle-health {
+  position: relative;
   max-width: min(780px, 100%);
   margin: auto;
   border: 2px solid #79808f;
@@ -946,6 +947,24 @@ h1 {
   box-shadow:
     inset 0 0 0 2px #111319,
     0 0 0 1px #2a2e36;
+}
+
+.battle-mockup-player-hit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 10px solid rgba(255, 77, 93, 0.48);
+  box-shadow: inset 0 0 35px rgba(255, 49, 75, 0.35);
+  animation: battle-player-hit-flash 420ms ease-out;
+}
+
+.battle-mockup-enemy-hit .battle-health-track {
+  animation: battle-enemy-shake 420ms ease-out;
+}
+
+.battle-mockup-enemy-hit .battle-profile-card .pc-card {
+  animation: battle-enemy-avatar-hit 420ms ease-out;
 }
 
 .battle-health-meta {
@@ -1054,6 +1073,30 @@ h1 {
   z-index: 2;
   box-shadow: inset 0 0 0 2px #101925;
   text-transform: uppercase;
+}
+
+.battle-state-pop {
+  position: absolute;
+  z-index: 6;
+  border: 2px solid #e9cc79;
+  background: rgba(49, 38, 19, 0.9);
+  color: #ffe7a6;
+  font-family: var(--font-pixel);
+  font-size: 0.46rem;
+  letter-spacing: 0.06em;
+  padding: 0.24rem 0.4rem;
+  box-shadow: inset 0 0 0 2px #1c1407;
+  animation: battle-state-pop 360ms ease-out;
+}
+
+.battle-state-pop-enemy {
+  right: 1rem;
+  top: 5.2rem;
+}
+
+.battle-state-pop-player {
+  left: 1rem;
+  top: 9.4rem;
 }
 
 .battle-profile-card .pc-card {
@@ -1301,7 +1344,7 @@ h1 {
 
 .battle-attention-panel {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 5;
   display: grid;
   gap: 0.4rem;
   width: min(100%, 760px);
@@ -1311,6 +1354,17 @@ h1 {
   border: 2px solid #6f9fcc;
   background: #162433;
   box-shadow: inset 0 0 0 2px #0c1520;
+}
+
+.battle-turn-phase {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin: 0.22rem auto 0;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  color: #9fd3ff;
+  text-transform: uppercase;
 }
 
 .battle-attention-title-row {
@@ -1364,7 +1418,7 @@ h1 {
 
 .battle-exploit-picker {
   grid-column: 1 / -1;
-  grid-row: 5;
+  grid-row: 6;
   width: fit-content;
   justify-self: center;
   border-radius: 0;
@@ -1405,6 +1459,61 @@ h1 {
   50% {
     opacity: 0.9;
     filter: brightness(1.15);
+  }
+}
+
+@keyframes battle-player-hit-flash {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes battle-enemy-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes battle-enemy-avatar-hit {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  35% {
+    transform: translateX(6px);
+  }
+  70% {
+    transform: translateX(-6px);
+  }
+}
+
+@keyframes battle-state-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1697,6 +1806,7 @@ h1 {
   font-family: var(--font-pixel);
   font-size: 1rem;
   animation: damage-float 0.9s steps(6, end) forwards;
+  z-index: 7;
 }
 
 .damage-number-enemy {
@@ -1706,8 +1816,8 @@ h1 {
 }
 
 .damage-number-player {
-  right: 0.8rem;
-  top: 0.5rem;
+  left: 1rem;
+  top: 8.4rem;
   color: #f5c842;
 }
 
@@ -1897,7 +2007,7 @@ h1 {
 @media (max-width: 900px) {
   .battle-mockup {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto;
   }
 
   .battle-profile-card {
@@ -1926,11 +2036,15 @@ h1 {
   }
 
   .battle-attention-panel {
-    grid-row: 5;
+    grid-row: 6;
   }
 
   .battle-exploit-picker {
-    grid-row: 6;
+    grid-row: 7;
+  }
+
+  .battle-turn-phase {
+    grid-row: 5;
   }
 
   .battle-end-turn {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -92,10 +93,55 @@ func HandleWebSocket(c *gin.Context) {
 				return
 			}
 		case "COMBAT_ACTION":
-			turn, combatResult, state, err := session.HandleCombatAction(game.PlayerAction{
+			playerAction := game.PlayerAction{
 				Action:    incoming.Action,
 				ExploitID: incoming.ExploitID,
-			})
+			}
+
+			if err := conn.WriteJSON(models.CombatPhaseMessage{
+				Type:    "COMBAT_PHASE",
+				Phase:   "enemy_thinking",
+				DelayMs: 1200,
+			}); err != nil {
+				log.Printf("ws combat phase send failed: %v", err)
+				return
+			}
+
+			enemyAction, _, err := session.PreviewEnemyAction(playerAction)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send combat error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+
+			time.Sleep(1200 * time.Millisecond)
+
+			if err := conn.WriteJSON(models.CombatPhaseMessage{
+				Type:        "COMBAT_PHASE",
+				Phase:       "enemy_reveal",
+				EnemyAction: enemyAction,
+				DelayMs:     450,
+			}); err != nil {
+				log.Printf("ws enemy reveal send failed: %v", err)
+				return
+			}
+
+			time.Sleep(450 * time.Millisecond)
+
+			if err := conn.WriteJSON(models.CombatPhaseMessage{
+				Type:  "COMBAT_PHASE",
+				Phase: "resolving",
+			}); err != nil {
+				log.Printf("ws resolving phase send failed: %v", err)
+				return
+			}
+
+			turn, combatResult, state, err := session.ResolveCombatAction(playerAction, enemyAction)
 			if err != nil {
 				if writeErr := conn.WriteJSON(models.ErrorMessage{
 					Type:  "ERROR",

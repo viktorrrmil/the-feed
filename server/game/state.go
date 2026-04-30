@@ -15,19 +15,25 @@ type GameState struct {
 }
 
 type CombatState struct {
-	Enemy             *Enemy         `json:"enemy"`
-	EnemyHP           int            `json:"enemyHp"`
-	Turn              string         `json:"turn"`
-	TurnCount         int            `json:"turnCount"`
-	PlayerBlock       bool           `json:"playerBlock"`
-	PlayerParry       bool           `json:"playerParry"`
-	PlayerBlockStreak int            `json:"playerBlockStreak"`
-	LastPlayerExploit string         `json:"lastPlayerExploit"`
-	LastEnemyAction   string         `json:"lastEnemyAction"`
-	EnemyDebuffs      map[string]int `json:"enemyDebuffs"`
-	PlayerDebuffs     map[string]int `json:"playerDebuffs"`
-	DisabledExploits  map[string]int `json:"disabledExploits"`
-	Log               []TurnResult   `json:"log"`
+	Enemy                *Enemy         `json:"enemy"`
+	EnemyHP              int            `json:"enemyHp"`
+	Turn                 string         `json:"turn"`
+	TurnPhase            string         `json:"turnPhase"`
+	TurnCount            int            `json:"turnCount"`
+	PlayerBlock          bool           `json:"playerBlock"`
+	PlayerParry          bool           `json:"playerParry"`
+	EnemyBlock           bool           `json:"enemyBlock"`
+	EnemyParry           bool           `json:"enemyParry"`
+	PlayerBlockStreak    int            `json:"playerBlockStreak"`
+	LastPlayerExploit    string         `json:"lastPlayerExploit"`
+	LastEnemyAction      string         `json:"lastEnemyAction"`
+	LastEnemyActionValue int            `json:"lastEnemyActionValue"`
+	LastEnemyActionCost  int            `json:"lastEnemyActionCost"`
+	PendingEnemyAction   *CombatAction  `json:"pendingEnemyAction,omitempty"`
+	EnemyDebuffs         map[string]int `json:"enemyDebuffs"`
+	PlayerDebuffs        map[string]int `json:"playerDebuffs"`
+	DisabledExploits     map[string]int `json:"disabledExploits"`
+	Log                  []TurnResult   `json:"log"`
 }
 
 type TurnEffect struct {
@@ -38,13 +44,34 @@ type TurnEffect struct {
 }
 
 type TurnResult struct {
-	PlayerAction    string       `json:"playerAction"`
-	EnemyAction     string       `json:"enemyAction"`
-	PlayerDamage    int          `json:"playerDamage"`
-	EnemyDamage     int          `json:"enemyDamage"`
-	EnemyHP         int          `json:"enemyHp"`
-	PlayerAttention int          `json:"playerAttention"`
-	Effects         []TurnEffect `json:"effects"`
+	PlayerAction      string       `json:"playerAction"`
+	EnemyAction       string       `json:"enemyAction"`
+	PlayerDamage      int          `json:"playerDamage"`
+	EnemyDamage       int          `json:"enemyDamage"`
+	EnemyHP           int          `json:"enemyHp"`
+	EnemyAttention    int          `json:"enemyAttention"`
+	PlayerAttention   int          `json:"playerAttention"`
+	PlayerActionCost  int          `json:"playerActionCost"`
+	EnemyActionCost   int          `json:"enemyActionCost"`
+	PlayerActionValue int          `json:"playerActionValue"`
+	EnemyActionValue  int          `json:"enemyActionValue"`
+	PlayerATSpent     int          `json:"playerATSpent"`
+	EnemyATSpent      int          `json:"enemyATSpent"`
+	PlayerATRefund    int          `json:"playerATRefund"`
+	EnemyATRefund     int          `json:"enemyATRefund"`
+	PlayerPenaltyAT   int          `json:"playerPenaltyAT"`
+	EnemyPenaltyAT    int          `json:"enemyPenaltyAT"`
+	PlayerState       string       `json:"playerState"`
+	EnemyState        string       `json:"enemyState"`
+	Effects           []TurnEffect `json:"effects"`
+}
+
+type CombatAction struct {
+	Type      string `json:"type"`
+	Label     string `json:"label"`
+	Cost      int    `json:"cost"`
+	Value     int    `json:"value"`
+	ExploitID string `json:"exploitId,omitempty"`
 }
 
 type Enemy struct {

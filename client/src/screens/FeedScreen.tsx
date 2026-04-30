@@ -11,6 +11,7 @@ import EvilPost from '../components/EvilPost'
 import ProfileCard from '../components/ProfileCard'
 import Post from '../components/Post'
 import type {
+  CombatActionPreview,
   CombatTurnResult,
   FeedPost,
   PlayerExploit,
@@ -34,6 +35,8 @@ interface FeedScreenProps {
   pendingCombatStart: boolean
   pendingCombatEnemyId: string | null
   combatSummaryPending: boolean
+  combatTurnPhase: string | null
+  revealedEnemyAction: CombatActionPreview | null
   onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string) => boolean
 }
 
@@ -48,10 +51,10 @@ const BEST_SCORE_STORAGE_KEY = 'the-feed-best-score'
 const EMPTY_COMBAT_LOG: CombatTurnResult[] = []
 const EMPTY_INVENTORY: Array<{ id?: string; name?: string } | null> = []
 const ACTION_COSTS: Record<CombatActionType, number> = {
-  attack: 7,
-  block: 4,
-  parry: 5,
-  exploit: 9,
+  attack: 9,
+  block: 5,
+  parry: 4,
+  exploit: 8,
 }
 const ACTION_LABELS: Record<CombatActionType, string> = {
   attack: 'Attack',
@@ -96,6 +99,8 @@ function FeedScreen({
   pendingCombatStart,
   pendingCombatEnemyId,
   combatSummaryPending,
+  combatTurnPhase,
+  revealedEnemyAction,
   onCombatAction,
 }: FeedScreenProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -162,8 +167,6 @@ function FeedScreen({
   const combatEnemy = combat?.enemy
   const combatEnemyMaxHp = typeof combatEnemy?.maxHp === 'number' ? combatEnemy.maxHp : 1
   const combatEnemyHp = typeof combat?.enemyHp === 'number' ? combat.enemyHp : combatEnemyMaxHp
-  const enemyStatusLabel =
-    selectedCombatAction === 'block' ? 'BLOCK' : selectedCombatAction === 'parry' ? 'PARRY' : ''
   const currentNoise =
     typeof serverState?.noise === 'number' ? Math.max(1, Math.min(serverState.noise, 9)) : 1
   const combatEnemyHpPercent = Math.max(
@@ -194,9 +197,14 @@ function FeedScreen({
   const isPostCombatSummaryActive = combatSummaryPending && !isReturnTransitionActive
   const isBattleMockupActive =
     isCombatPhase || isEncounterActive || isPostCombatSummaryActive || isReturnTransitionActive
+  const activeTurnPhase = combatTurnPhase ?? (typeof combat?.turnPhase === 'string' ? combat.turnPhase : null)
+  const isEnemyThinkingPhase = activeTurnPhase === 'enemy_thinking'
+  const isEnemyRevealPhase = activeTurnPhase === 'enemy_reveal'
+  const isResolvingPhase = activeTurnPhase === 'resolving'
   const canActInCombat =
     connected &&
     isCombatPhase &&
+    (activeTurnPhase === null || activeTurnPhase === 'player_select') &&
     combatTurn === 'player' &&
     !isEncounterActive &&
     !isPostCombatSummaryActive &&
@@ -232,9 +240,12 @@ function FeedScreen({
   const canUseExploitAction =
     Boolean(selectedExploit?.id) &&
     (selectedExploit?.id ? (disabledExploits[selectedExploit.id] ?? 0) === 0 : false)
+  const hasEnoughATForSelectedAction =
+    selectedCombatAction !== null ? currentAttention >= ACTION_COSTS[selectedCombatAction] : false
   const canCommitSelectedAction =
     canActInCombat &&
     Boolean(selectedCombatAction) &&
+    hasEnoughATForSelectedAction &&
     (selectedCombatAction === 'exploit' ? canUseExploitAction : true)
   const selectedExploitDamageRange = useMemo(() => {
     const exploitId = selectedExploit?.id
@@ -242,27 +253,24 @@ function FeedScreen({
       return { min: 0, max: 0 }
     }
     if (exploitId === 'focused_reply') {
-      const value = 18 + currentNoise * 2
+      const value = 11 + currentNoise
       return { min: value, max: value }
     }
-    if (exploitId === 'deep_scroll') {
-      return { min: 0, max: 0 }
-    }
     if (exploitId === 'growth_hack') {
-      return { min: 10 * currentNoise, max: 15 * currentNoise }
+      return { min: 8 + currentNoise, max: 11 + currentNoise }
     }
     if (exploitId === 'volatility_engine') {
-      const base = 12 + currentNoise * 2
+      const base = 6 + currentNoise
       return {
-        min: Math.floor(base * 0.5),
-        max: Math.floor(base * 2.5),
+        min: base,
+        max: base + 7,
       }
     }
     if (exploitId === 'bait_loop') {
-      const value = 15 + currentNoise
+      const value = 10 + currentNoise
       return { min: value, max: value }
     }
-    const fallback = 10 + currentNoise
+    const fallback = 9 + currentNoise
     return { min: fallback, max: fallback }
   }, [currentNoise, selectedExploit?.id])
   const selectedActionDamageRange = useMemo(() => {
@@ -301,6 +309,35 @@ function FeedScreen({
       : selectedActionDamageRange.min === selectedActionDamageRange.max
         ? `${selectedActionDamageRange.max}`
         : `${selectedActionDamageRange.min}-${selectedActionDamageRange.max}`
+  const enemyVisibleAction =
+    revealedEnemyAction ??
+    (latestCombatTurn
+      ? {
+          type: latestCombatTurn.enemyState === 'block' ? 'block' : latestCombatTurn.enemyState === 'parry' ? 'parry' : 'attack',
+          label: latestCombatTurn.enemyAction,
+          cost: latestCombatTurn.enemyActionCost ?? 0,
+          value: latestCombatTurn.enemyActionValue ?? 0,
+        }
+      : null)
+  const enemyStatusLabel =
+    enemyVisibleAction?.type === 'block'
+      ? `BLOCK ${enemyVisibleAction.value}`
+      : enemyVisibleAction?.type === 'parry'
+        ? `PARRY ${enemyVisibleAction.value}`
+        : ''
+  const latestEffects = latestCombatTurn?.effects ?? []
+  const didEnemyBlock = latestEffects.some(
+    (effect) => effect.target === 'enemy' && effect.label.toLowerCase().includes('blocked'),
+  )
+  const didPlayerBlock = latestEffects.some(
+    (effect) => effect.target === 'player' && effect.label.toLowerCase().includes('blocked'),
+  )
+  const didEnemyParry = latestEffects.some(
+    (effect) => effect.target === 'enemy' && effect.label.toLowerCase().includes('parried'),
+  )
+  const didPlayerParry = latestEffects.some(
+    (effect) => effect.target === 'player' && effect.label.toLowerCase().includes('parried'),
+  )
   const combatChatEntries = useMemo<CombatChatEntry[]>(() => {
     if (combatLog.length === 0) {
       return [
@@ -322,13 +359,13 @@ function FeedScreen({
           id: `${turnId}-enemy`,
           side: 'left',
           speaker: (combatEnemy?.name ?? 'Enemy').toUpperCase(),
-          text: `used ${turn.enemyAction}`,
+          text: `${turn.enemyAction} (${turn.enemyActionValue ?? 0} AT, cost ${turn.enemyActionCost ?? 0})`,
         },
         {
           id: `${turnId}-player`,
           side: 'right',
           speaker: 'YOU',
-          text: `used ${turn.playerAction}`,
+          text: `${turn.playerAction} (${turn.playerActionValue ?? 0} AT, cost ${turn.playerActionCost ?? 0})`,
         },
       ]
     })
@@ -668,13 +705,16 @@ function FeedScreen({
       if (!canActInCombat) {
         return false
       }
+      if (currentAttention < ACTION_COSTS[action]) {
+        return false
+      }
       if (action === 'exploit' && !canUseExploitAction) {
         return false
       }
       setSelectedCombatAction(action)
       return true
     },
-    [canActInCombat, canUseExploitAction],
+    [canActInCombat, canUseExploitAction, currentAttention],
   )
 
   const handleCycleExploit = useCallback(() => {
@@ -1012,13 +1052,15 @@ function FeedScreen({
         </div>
 
         {isBattleMockupActive ? (
-          <section
-            className={`battle-mockup ${
-              isEncounterActive
-                ? 'battle-mockup-transition'
-                : isReturnTransitionActive
-                  ? 'battle-mockup-return'
-                  : 'battle-mockup-live'
+            <section
+              className={`battle-mockup ${
+                isEncounterActive
+                  ? 'battle-mockup-transition'
+                  : isReturnTransitionActive
+                    ? 'battle-mockup-return'
+                    : 'battle-mockup-live'
+            } ${latestCombatTurn?.enemyDamage ? 'battle-mockup-player-hit' : ''} ${
+              latestCombatTurn?.playerDamage ? 'battle-mockup-enemy-hit' : ''
             }`}
             style={encounterBurstStyle}
             aria-label="Battle interface mockup"
@@ -1038,7 +1080,7 @@ function FeedScreen({
                     ENEMY AT {projectedEnemyHp}/{combatEnemyMaxHp}
                   </span>
                 </div>
-                <div className="battle-health-track" role="img" aria-label="Enemy health">
+            <div className="battle-health-track" role="img" aria-label="Enemy health">
                   <span
                     className="battle-health-fill"
                     style={{ width: `${isPostCombatSummaryActive ? 0 : combatEnemyHpPercent}%` }}
@@ -1052,11 +1094,28 @@ function FeedScreen({
                       }}
                     />
                   ) : null}
-                </div>
-                {!isPostCombatSummaryActive ? (
-                  <p className="battle-enemy-preview-text">
-                    On commit: -{selectedActionDamageText} HP
-                  </p>
+            </div>
+            {latestCombatTurn?.playerDamage ? (
+              <span key={`enemy-dmg-${combatLog.length}`} className="damage-number damage-number-enemy">
+                -{latestCombatTurn.playerDamage}
+              </span>
+            ) : null}
+            {didEnemyBlock ? <span className="battle-state-pop battle-state-pop-enemy">BLOCK</span> : null}
+            {didEnemyParry ? <span className="battle-state-pop battle-state-pop-enemy">PARRY</span> : null}
+            {!isPostCombatSummaryActive ? (
+              <>
+                    <p className="battle-enemy-preview-text">
+                      On commit: -{selectedActionDamageText} HP
+                    </p>
+                    <p className="battle-enemy-preview-text">
+                      Enemy action:{' '}
+                      {enemyVisibleAction
+                        ? `${enemyVisibleAction.label} (${enemyVisibleAction.value} AT, cost ${enemyVisibleAction.cost})`
+                        : isEnemyThinkingPhase
+                          ? 'thinking...'
+                          : 'pending'}
+                    </p>
+                  </>
                 ) : null}
               </div>
             </header>
@@ -1077,6 +1136,13 @@ function FeedScreen({
                 behindGlowEnabled={false}
                 innerGradient="linear-gradient(145deg,#60496e8c 0%,#71C4FF44 100%)"
             />
+            {latestCombatTurn?.enemyDamage ? (
+              <span key={`player-dmg-${combatLog.length}`} className="damage-number damage-number-player">
+                -{latestCombatTurn.enemyDamage}
+              </span>
+            ) : null}
+            {didPlayerBlock ? <span className="battle-state-pop battle-state-pop-player">BLOCK</span> : null}
+            {didPlayerParry ? <span className="battle-state-pop battle-state-pop-player">PARRY</span> : null}
             {!isPostCombatSummaryActive && enemyStatusLabel ? (
               <div className="battle-enemy-state" aria-label="Current selected combat stance">
                 Stance: {enemyStatusLabel}
@@ -1106,6 +1172,26 @@ function FeedScreen({
                 </div>
               ) : (
                 <div className="battle-chat-thread">
+                  {isEnemyThinkingPhase ? (
+                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
+                      <p className="battle-chat-speaker">{(combatEnemy?.name ?? 'Enemy').toUpperCase()}</p>
+                      <p className="battle-chat-text">Enemy is thinking...</p>
+                    </article>
+                  ) : null}
+                  {isEnemyRevealPhase && enemyVisibleAction ? (
+                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
+                      <p className="battle-chat-speaker">{(combatEnemy?.name ?? 'Enemy').toUpperCase()}</p>
+                      <p className="battle-chat-text">
+                        chooses {enemyVisibleAction.label} ({enemyVisibleAction.value} AT)
+                      </p>
+                    </article>
+                  ) : null}
+                  {isResolvingPhase ? (
+                    <article className="battle-chat-bubble battle-chat-bubble-right battle-chat-bubble-system">
+                      <p className="battle-chat-speaker">SYS</p>
+                      <p className="battle-chat-text">Resolving actions...</p>
+                    </article>
+                  ) : null}
                   {combatChatEntries.map((entry, index) => (
                     <article
                       key={entry.id}
@@ -1114,6 +1200,22 @@ function FeedScreen({
                     >
                       <p className="battle-chat-speaker">{entry.speaker}</p>
                       <p className="battle-chat-text">{entry.text}</p>
+                    </article>
+                  ))}
+                  {latestCombatTurn?.effects?.slice(-6).map((effect, index) => (
+                    <article
+                      key={`effect-${effect.kind}-${effect.label}-${index}`}
+                      className={`battle-chat-bubble ${
+                        effect.target === 'enemy' ? 'battle-chat-bubble-right' : 'battle-chat-bubble-left'
+                      } battle-chat-bubble-system`}
+                      style={
+                        {
+                          '--chat-pop-delay': `${(combatChatEntries.length + index) * 45}ms`,
+                        } as CSSProperties
+                      }
+                    >
+                      <p className="battle-chat-speaker">RESOLVE</p>
+                      <p className="battle-chat-text">{effect.label}</p>
                     </article>
                   ))}
                   {latestCombatTurn ? (
@@ -1157,7 +1259,9 @@ function FeedScreen({
                 <>
                   {(['attack', 'block', 'parry', 'exploit'] as CombatActionType[]).map((action) => {
                     const disabled =
-                      action === 'exploit' ? !canActInCombat || !canUseExploitAction : !canActInCombat
+                      action === 'exploit'
+                        ? !canActInCombat || !canUseExploitAction || currentAttention < ACTION_COSTS[action]
+                        : !canActInCombat || currentAttention < ACTION_COSTS[action]
                     return (
                       <button
                         key={action}
@@ -1192,7 +1296,7 @@ function FeedScreen({
                             [{action === 'attack' ? 'Q' : action === 'block' ? 'W' : action === 'parry' ? 'E' : 'R'}]
                           </span>
                         </span>
-                        <span className="battle-action-cost">-{ACTION_COSTS[action]} AT</span>
+                        <span className="battle-action-cost">{ACTION_COSTS[action]} AT</span>
                       </button>
                     )
                   })}
@@ -1209,6 +1313,17 @@ function FeedScreen({
               )}
             </footer>
             {!isPostCombatSummaryActive ? (
+              <p className="battle-turn-phase">
+                {isEnemyThinkingPhase
+                  ? 'Enemy is thinking...'
+                  : isEnemyRevealPhase
+                    ? 'Enemy action revealed'
+                    : isResolvingPhase
+                      ? 'Resolving actions...'
+                      : 'Select action and End Turn'}
+              </p>
+            ) : null}
+            {!isPostCombatSummaryActive ? (
               <>
                 <div className="battle-attention-panel" aria-label="Player attention">
                   <div className="battle-attention-title-row">
@@ -1220,6 +1335,8 @@ function FeedScreen({
                   <div className="battle-player-stats">
                     <span>DMG {selectedActionDamageText}</span>
                     <span>NOISE {currentNoise}</span>
+                    <span>SPENT {latestCombatTurn?.playerATSpent ?? 0}</span>
+                    <span>REFUND {latestCombatTurn?.playerATRefund ?? 0}</span>
                   </div>
                   <div
                     className="battle-attention-track"

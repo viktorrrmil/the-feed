@@ -24,6 +24,8 @@ function App() {
     pendingCombatStart,
     pendingCombatEnemyId,
     combatSummaryPending,
+    combatTurnPhase,
+    revealedEnemyAction,
   } = useGameState()
 
   if (phase === 'feed' || phase === 'combat') {
@@ -45,6 +47,8 @@ function App() {
         pendingCombatStart={pendingCombatStart}
         pendingCombatEnemyId={pendingCombatEnemyId}
         combatSummaryPending={combatSummaryPending}
+        combatTurnPhase={combatTurnPhase}
+        revealedEnemyAction={revealedEnemyAction}
         onCombatAction={sendCombatAction}
       />
     )

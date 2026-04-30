@@ -29,6 +29,13 @@ type CombatResultMessage struct {
 	Turn *game.TurnResult `json:"turn"`
 }
 
+type CombatPhaseMessage struct {
+	Type        string             `json:"type"`
+	Phase       string             `json:"phase"`
+	EnemyAction *game.CombatAction `json:"enemyAction,omitempty"`
+	DelayMs     int                `json:"delayMs,omitempty"`
+}
+
 type CombatEndMessage struct {
 	Type   string `json:"type"`
 	Result string `json:"result"`
