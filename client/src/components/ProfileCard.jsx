@@ -165,8 +165,8 @@ const ProfileCardComponent = ({
       const orbitX = width * 0.32;
       const orbitY = height * 0.27;
 
-      const x = centerX + Math.sin(ts / 1300) * orbitX;
-      const y = centerY + Math.cos(ts / 2800) * orbitY;
+      const x = centerX + Math.sin(ts / 700) * orbitX;
+      const y = centerY + Math.cos(ts / 5000) * orbitY;
       tiltEngine.setTarget(clamp(x, 0, width), clamp(y, 0, height));
       autoPanRafRef.current = requestAnimationFrame(animateAutoPan);
     };

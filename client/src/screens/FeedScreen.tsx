@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -37,6 +38,8 @@ interface FeedScreenProps {
 }
 
 type SwipeAnimation = 'none' | 'snap-forward' | 'snap-back'
+type CombatActionType = 'attack' | 'block' | 'parry' | 'exploit'
+type ChatBubbleSide = 'left' | 'right'
 const ENCOUNTER_LOCK_MS = 2000
 const ENCOUNTER_TOTAL_MS = 2860
 const ENCOUNTER_START_DELAY_MS = 70
@@ -44,6 +47,24 @@ const COMBAT_RETURN_MS = 760
 const BEST_SCORE_STORAGE_KEY = 'the-feed-best-score'
 const EMPTY_COMBAT_LOG: CombatTurnResult[] = []
 const EMPTY_INVENTORY: Array<{ id?: string; name?: string } | null> = []
+const ACTION_COSTS: Record<CombatActionType, number> = {
+  attack: 7,
+  block: 4,
+  parry: 5,
+  exploit: 9,
+}
+const ACTION_LABELS: Record<CombatActionType, string> = {
+  attack: 'Attack',
+  block: 'Block',
+  parry: 'Parry',
+  exploit: 'Exploit',
+}
+const ACTION_ICONS: Record<CombatActionType, string> = {
+  attack: '/attack.png',
+  block: '/block.png',
+  parry: '/parry.png',
+  exploit: '/exploit.png',
+}
 interface CombatSummaryData {
   result: 'win' | 'lose'
   enemyName: string
@@ -51,6 +72,12 @@ interface CombatSummaryData {
   totalDamageDealt: number
   totalDamageTaken: number
   rewards: string[]
+}
+interface CombatChatEntry {
+  id: string
+  side: ChatBubbleSide
+  speaker: string
+  text: string
 }
 
 function FeedScreen({
@@ -108,6 +135,7 @@ function FeedScreen({
   const [isInputLocked, setIsInputLocked] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [selectedExploitId, setSelectedExploitId] = useState('focused_reply')
+  const [selectedCombatAction, setSelectedCombatAction] = useState<CombatActionType | null>(null)
   const [storedBestScore] = useState(() => {
     const persistedBestScore = Number.parseInt(
       window.localStorage.getItem(BEST_SCORE_STORAGE_KEY) ?? '0',
@@ -134,6 +162,10 @@ function FeedScreen({
   const combatEnemy = combat?.enemy
   const combatEnemyMaxHp = typeof combatEnemy?.maxHp === 'number' ? combatEnemy.maxHp : 1
   const combatEnemyHp = typeof combat?.enemyHp === 'number' ? combat.enemyHp : combatEnemyMaxHp
+  const enemyStatusLabel =
+    selectedCombatAction === 'block' ? 'BLOCK' : selectedCombatAction === 'parry' ? 'PARRY' : ''
+  const currentNoise =
+    typeof serverState?.noise === 'number' ? Math.max(1, Math.min(serverState.noise, 9)) : 1
   const combatEnemyHpPercent = Math.max(
     0,
     Math.min(100, Math.round((combatEnemyHp / combatEnemyMaxHp) * 100)),
@@ -172,6 +204,135 @@ function FeedScreen({
   const isInteractionLocked = isInputLocked || isMenuOpen
   const isFeedInteractionLocked =
     isInteractionLocked || isCombatPhase || isPostCombatSummaryActive || isReturnTransitionActive
+  const maxAttention =
+    typeof serverState?.maxAttention === 'number' && serverState.maxAttention > 0
+      ? serverState.maxAttention
+      : 100
+  const currentAttention =
+    typeof serverState?.attention === 'number'
+      ? Math.max(0, Math.min(serverState.attention, maxAttention))
+      : maxAttention
+  const selectedActionCost = selectedCombatAction ? ACTION_COSTS[selectedCombatAction] : 0
+  const projectedAttention = Math.max(currentAttention - selectedActionCost, 0)
+  const attentionPreviewOffsetPercent = Math.max(
+    0,
+    Math.min(100, Math.round((projectedAttention / maxAttention) * 100)),
+  )
+  const attentionFillPercent = Math.max(
+    0,
+    Math.min(100, Math.round((currentAttention / maxAttention) * 100)),
+  )
+  const attentionPreviewPercent = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round((Math.min(currentAttention, selectedActionCost) / maxAttention) * 100),
+    ),
+  )
+  const canUseExploitAction =
+    Boolean(selectedExploit?.id) &&
+    (selectedExploit?.id ? (disabledExploits[selectedExploit.id] ?? 0) === 0 : false)
+  const canCommitSelectedAction =
+    canActInCombat &&
+    Boolean(selectedCombatAction) &&
+    (selectedCombatAction === 'exploit' ? canUseExploitAction : true)
+  const selectedExploitDamageRange = useMemo(() => {
+    const exploitId = selectedExploit?.id
+    if (!exploitId) {
+      return { min: 0, max: 0 }
+    }
+    if (exploitId === 'focused_reply') {
+      const value = 18 + currentNoise * 2
+      return { min: value, max: value }
+    }
+    if (exploitId === 'deep_scroll') {
+      return { min: 0, max: 0 }
+    }
+    if (exploitId === 'growth_hack') {
+      return { min: 10 * currentNoise, max: 15 * currentNoise }
+    }
+    if (exploitId === 'volatility_engine') {
+      const base = 12 + currentNoise * 2
+      return {
+        min: Math.floor(base * 0.5),
+        max: Math.floor(base * 2.5),
+      }
+    }
+    if (exploitId === 'bait_loop') {
+      const value = 15 + currentNoise
+      return { min: value, max: value }
+    }
+    const fallback = 10 + currentNoise
+    return { min: fallback, max: fallback }
+  }, [currentNoise, selectedExploit?.id])
+  const selectedActionDamageRange = useMemo(() => {
+    if (!selectedCombatAction) {
+      return { min: 0, max: 0 }
+    }
+    if (selectedCombatAction === 'attack') {
+      return {
+        min: 12 + currentNoise * 2,
+        max: 15 + currentNoise * 2,
+      }
+    }
+    if (selectedCombatAction === 'exploit') {
+      return selectedExploitDamageRange
+    }
+    return { min: 0, max: 0 }
+  }, [currentNoise, selectedCombatAction, selectedExploitDamageRange])
+  const selectedActionDamagePreview = Math.round(
+    (selectedActionDamageRange.min + selectedActionDamageRange.max) / 2,
+  )
+  const projectedEnemyHp = Math.max(combatEnemyHp - selectedActionDamagePreview, 0)
+  const enemyPreviewOffsetPercent = Math.max(
+    0,
+    Math.min(100, Math.round((projectedEnemyHp / combatEnemyMaxHp) * 100)),
+  )
+  const enemyPreviewPercent = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(((Math.min(combatEnemyHp, selectedActionDamagePreview) || 0) / combatEnemyMaxHp) * 100),
+    ),
+  )
+  const selectedActionDamageText =
+    selectedActionDamageRange.max <= 0
+      ? '0'
+      : selectedActionDamageRange.min === selectedActionDamageRange.max
+        ? `${selectedActionDamageRange.max}`
+        : `${selectedActionDamageRange.min}-${selectedActionDamageRange.max}`
+  const combatChatEntries = useMemo<CombatChatEntry[]>(() => {
+    if (combatLog.length === 0) {
+      return [
+        { id: 'intro-1', side: 'left', speaker: 'SYS', text: 'hostile channel stabilized.' },
+        { id: 'intro-2', side: 'right', speaker: 'YOU', text: 'ready to engage.' },
+        { id: 'intro-3', side: 'left', speaker: 'VOID', text: 'I can see you scrolling.' },
+        { id: 'intro-4', side: 'right', speaker: 'YOU', text: 'prove it.' },
+      ]
+    }
+
+    const turns = combatLog.slice(-4)
+    const startIndex = Math.max(0, combatLog.length - turns.length)
+
+    return turns.flatMap((turn, index) => {
+      const turnNumber = startIndex + index + 1
+      const turnId = `turn-${turnNumber}-${turn.playerAction}-${turn.enemyAction}`
+      return [
+        {
+          id: `${turnId}-enemy`,
+          side: 'left',
+          speaker: (combatEnemy?.name ?? 'Enemy').toUpperCase(),
+          text: `used ${turn.enemyAction}`,
+        },
+        {
+          id: `${turnId}-player`,
+          side: 'right',
+          speaker: 'YOU',
+          text: `used ${turn.playerAction}`,
+        },
+      ]
+    })
+  }, [combatEnemy?.name, combatLog])
   const bestScore = Math.max(score, storedBestScore)
 
   const setOffset = useCallback((value: number) => {
@@ -221,6 +382,7 @@ function FeedScreen({
       setOffset(0)
       setPostCombatSummary(null)
       setIsCombatReturnActive(false)
+      setSelectedCombatAction(null)
 
       setIsEncounterActive(true)
       setIsEncounterLockPhase(true)
@@ -495,10 +657,110 @@ function FeedScreen({
     returnTimerRef.current = window.setTimeout(() => {
       setIsCombatReturnActive(false)
       setPostCombatSummary(null)
+      setSelectedCombatAction(null)
       onCombatSummaryContinue()
       returnTimerRef.current = null
     }, COMBAT_RETURN_MS)
   }, [isCombatReturnActive, onCombatSummaryContinue])
+
+  const handleSelectCombatAction = useCallback(
+    (action: CombatActionType) => {
+      if (!canActInCombat) {
+        return false
+      }
+      if (action === 'exploit' && !canUseExploitAction) {
+        return false
+      }
+      setSelectedCombatAction(action)
+      return true
+    },
+    [canActInCombat, canUseExploitAction],
+  )
+
+  const handleCycleExploit = useCallback(() => {
+    if (!isCombatPhase || !availableExploitIds.length) {
+      return false
+    }
+    const currentIndex = availableExploitIds.indexOf(effectiveSelectedExploitId)
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % availableExploitIds.length
+    setSelectedExploitId(availableExploitIds[nextIndex])
+    return true
+  }, [availableExploitIds, effectiveSelectedExploitId, isCombatPhase])
+
+  const handleEndTurn = useCallback(() => {
+    if (!canCommitSelectedAction || !selectedCombatAction) {
+      return false
+    }
+    const sent =
+      selectedCombatAction === 'exploit'
+        ? onCombatAction('exploit', selectedExploit?.id)
+        : onCombatAction(selectedCombatAction)
+    if (sent) {
+      setSelectedCombatAction(null)
+    }
+    return sent
+  }, [canCommitSelectedAction, onCombatAction, selectedCombatAction, selectedExploit?.id])
+
+  useEffect(() => {
+    if (
+      !isBattleMockupActive ||
+      !isCombatPhase ||
+      isPostCombatSummaryActive ||
+      isReturnTransitionActive ||
+      isInteractionLocked
+    ) {
+      return
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const eventTarget = event.target as HTMLElement | null
+      if (
+        eventTarget &&
+        (eventTarget.tagName === 'INPUT' ||
+          eventTarget.tagName === 'TEXTAREA' ||
+          eventTarget.tagName === 'SELECT' ||
+          eventTarget.isContentEditable)
+      ) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      let handled = false
+
+      if (key === 'q') {
+        handled = handleSelectCombatAction('attack')
+      } else if (key === 'w') {
+        handled = handleSelectCombatAction('block')
+      } else if (key === 'e') {
+        handled = handleSelectCombatAction('parry')
+      } else if (key === 'r') {
+        handled = handleSelectCombatAction('exploit')
+      } else if (key === 't') {
+        handled = handleCycleExploit()
+      } else if (key === ' ' || key === 'spacebar') {
+        handled = handleEndTurn()
+      }
+
+      if (handled) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [
+    handleCycleExploit,
+    handleEndTurn,
+    handleSelectCombatAction,
+    isBattleMockupActive,
+    isCombatPhase,
+    isInteractionLocked,
+    isPostCombatSummaryActive,
+    isReturnTransitionActive,
+  ])
 
   const finalizeSwipe = useCallback(() => {
     if (!connected || isFeedInteractionLocked) {
@@ -692,10 +954,12 @@ function FeedScreen({
           >
             ☰
           </button>
-          <div className="score-ribbon">
-            <span>SCORE {score}</span>
-            <span>BEST {bestScore}</span>
-          </div>
+          {!isBattleMockupActive ? (
+            <div className="score-ribbon">
+              <span>SCORE {score}</span>
+              <span>BEST {bestScore}</span>
+            </div>
+          ) : null}
         </header>
 
         <div className="phone-rig-anchor">
@@ -761,20 +1025,39 @@ function FeedScreen({
           >
             <header className="battle-hud">
               <div className="battle-health">
-                <span className="battle-label">
-                  ENEMY //{' '}
-                  {(
-                    isPostCombatSummaryActive
-                      ? postCombatSummary?.enemyName
-                      : combatEnemy?.name
-                  )?.toUpperCase() ?? 'SIGNAL_REAPER'}
-                </span>
+                <div className="battle-health-meta">
+                  <span className="battle-label">
+                    ENEMY //{' '}
+                    {(
+                      isPostCombatSummaryActive
+                        ? postCombatSummary?.enemyName
+                        : combatEnemy?.name
+                    )?.toUpperCase() ?? 'SIGNAL_REAPER'}
+                  </span>
+                  <span className="battle-enemy-at">
+                    ENEMY AT {projectedEnemyHp}/{combatEnemyMaxHp}
+                  </span>
+                </div>
                 <div className="battle-health-track" role="img" aria-label="Enemy health">
                   <span
                     className="battle-health-fill"
                     style={{ width: `${isPostCombatSummaryActive ? 0 : combatEnemyHpPercent}%` }}
                   />
+                  {selectedCombatAction && enemyPreviewPercent > 0 ? (
+                    <span
+                      className="battle-health-preview"
+                      style={{
+                        width: `${enemyPreviewPercent}%`,
+                        left: `${enemyPreviewOffsetPercent}%`,
+                      }}
+                    />
+                  ) : null}
                 </div>
+                {!isPostCombatSummaryActive ? (
+                  <p className="battle-enemy-preview-text">
+                    On commit: -{selectedActionDamageText} HP
+                  </p>
+                ) : null}
               </div>
             </header>
 
@@ -785,7 +1068,7 @@ function FeedScreen({
                 handle=""
                 status=""
                 contactText=""
-                avatarUrl="../../public/avatar.png"
+                avatarUrl="../../public/top_b.png"
                 showUserInfo={false}
                 enableTilt={true}
                 enableMobileTilt={false}
@@ -794,6 +1077,11 @@ function FeedScreen({
                 behindGlowEnabled={false}
                 innerGradient="linear-gradient(145deg,#60496e8c 0%,#71C4FF44 100%)"
             />
+            {!isPostCombatSummaryActive && enemyStatusLabel ? (
+              <div className="battle-enemy-state" aria-label="Current selected combat stance">
+                Stance: {enemyStatusLabel}
+              </div>
+            ) : null}
 
             <aside
               className={`battle-chat ${isPostCombatSummaryActive ? 'battle-chat-summary' : ''}`}
@@ -816,31 +1104,43 @@ function FeedScreen({
                       : 'NONE'}
                   </p>
                 </div>
-              ) : combatLog.length === 0 ? (
-                <>
-                  <p>SYS: hostile channel stabilized.</p>
-                  <p>VOID: I can see you scrolling.</p>
-                  <p>SYS: input profile corrupted.</p>
-                  <p>VOID: prove you can survive.</p>
-                </>
               ) : (
-                combatLog.slice(-4).map((turn, index) => (
-                  <p key={`${turn.playerAction}-${turn.enemyAction}-${index}`}>
-                    YOU: {turn.playerAction} // ENEMY: {turn.enemyAction}
-                  </p>
-                ))
+                <div className="battle-chat-thread">
+                  {combatChatEntries.map((entry, index) => (
+                    <article
+                      key={entry.id}
+                      className={`battle-chat-bubble battle-chat-bubble-${entry.side}`}
+                      style={{ '--chat-pop-delay': `${index * 60}ms` } as CSSProperties}
+                    >
+                      <p className="battle-chat-speaker">{entry.speaker}</p>
+                      <p className="battle-chat-text">{entry.text}</p>
+                    </article>
+                  ))}
+                  {latestCombatTurn ? (
+                    <article
+                      className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system"
+                      style={{ '--chat-pop-delay': `${combatChatEntries.length * 60}ms` } as CSSProperties}
+                    >
+                      <p className="battle-chat-speaker">SYS</p>
+                      <p className="battle-chat-text">
+                        hit Δ enemy -{latestCombatTurn.playerDamage} / you -{latestCombatTurn.enemyDamage}
+                      </p>
+                    </article>
+                  ) : null}
+                  {latestCombatResult === 'win' ? (
+                    <article className="battle-chat-bubble battle-chat-bubble-right battle-chat-bubble-system">
+                      <p className="battle-chat-speaker">SYS</p>
+                      <p className="battle-chat-text">target neutralized.</p>
+                    </article>
+                  ) : null}
+                  {latestCombatResult === 'lose' ? (
+                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
+                      <p className="battle-chat-speaker">SYS</p>
+                      <p className="battle-chat-text">attention collapse detected.</p>
+                    </article>
+                  ) : null}
+                </div>
               )}
-              {latestCombatTurn && !isPostCombatSummaryActive ? (
-                <p>
-                  HIT Δ ENEMY -{latestCombatTurn.playerDamage} / YOU -{latestCombatTurn.enemyDamage}
-                </p>
-              ) : null}
-              {latestCombatResult === 'win' && !isPostCombatSummaryActive ? (
-                <p>SYS: target neutralized.</p>
-              ) : null}
-              {latestCombatResult === 'lose' && !isPostCombatSummaryActive ? (
-                <p>SYS: attention collapse detected.</p>
-              ) : null}
             </aside>
 
             <footer className="battle-actions">
@@ -855,48 +1155,103 @@ function FeedScreen({
                 </button>
               ) : (
                 <>
-                  <button type="button" onClick={() => onCombatAction('attack')} disabled={!canActInCombat}>
-                    Attack
-                  </button>
-                  <button type="button" onClick={() => onCombatAction('block')} disabled={!canActInCombat}>
-                    Block
-                  </button>
-                  <button type="button" onClick={() => onCombatAction('parry')} disabled={!canActInCombat}>
-                    Parry
-                  </button>
+                  {(['attack', 'block', 'parry', 'exploit'] as CombatActionType[]).map((action) => {
+                    const disabled =
+                      action === 'exploit' ? !canActInCombat || !canUseExploitAction : !canActInCombat
+                    return (
+                      <button
+                        key={action}
+                        type="button"
+                        className={`battle-action-button ${
+                          selectedCombatAction === action ? 'battle-action-button-selected' : ''
+                        }`}
+                        onClick={() => handleSelectCombatAction(action)}
+                        disabled={disabled}
+                        aria-pressed={selectedCombatAction === action}
+                        aria-keyshortcuts={
+                          action === 'attack'
+                            ? 'Q'
+                            : action === 'block'
+                              ? 'W'
+                              : action === 'parry'
+                                ? 'E'
+                                : 'R'
+                        }
+                      >
+                        <span className="battle-action-icon-wrap" aria-hidden>
+                          <img
+                            src={ACTION_ICONS[action]}
+                            alt=""
+                            className="battle-action-icon"
+                            draggable={false}
+                          />
+                        </span>
+                        <span className="battle-action-label">
+                          {ACTION_LABELS[action]}
+                          <span className="battle-action-keybind">
+                            [{action === 'attack' ? 'Q' : action === 'block' ? 'W' : action === 'parry' ? 'E' : 'R'}]
+                          </span>
+                        </span>
+                        <span className="battle-action-cost">-{ACTION_COSTS[action]} AT</span>
+                      </button>
+                    )
+                  })}
                   <button
                     type="button"
-                    onClick={() => {
-                      if (selectedExploit?.id) {
-                        onCombatAction('exploit', selectedExploit.id)
-                      }
-                    }}
-                    disabled={
-                      !canActInCombat ||
-                      !selectedExploit ||
-                      (selectedExploit.id ? (disabledExploits[selectedExploit.id] ?? 0) > 0 : true)
-                    }
+                    className="battle-end-turn"
+                    disabled={!canCommitSelectedAction}
+                    onClick={handleEndTurn}
+                    aria-keyshortcuts="Space"
                   >
-                    Exploit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!isCombatPhase}
-                    onClick={() => {
-                      if (!availableExploitIds.length) {
-                        return
-                      }
-                      const currentIndex = availableExploitIds.indexOf(effectiveSelectedExploitId)
-                      const nextIndex =
-                        currentIndex < 0 ? 0 : (currentIndex + 1) % availableExploitIds.length
-                      setSelectedExploitId(availableExploitIds[nextIndex])
-                    }}
-                  >
-                    {selectedExploit?.name ?? 'Select Exploit'}
+                    End Turn [Space]
                   </button>
                 </>
               )}
             </footer>
+            {!isPostCombatSummaryActive ? (
+              <>
+                <div className="battle-attention-panel" aria-label="Player attention">
+                  <div className="battle-attention-title-row">
+                    <span className="battle-attention-title">Attention (AT)</span>
+                    <span className="battle-attention-value">
+                      {projectedAttention}/{maxAttention}
+                    </span>
+                  </div>
+                  <div className="battle-player-stats">
+                    <span>DMG {selectedActionDamageText}</span>
+                    <span>NOISE {currentNoise}</span>
+                  </div>
+                  <div
+                    className="battle-attention-track"
+                    role="img"
+                    aria-label={`Attention ${projectedAttention} of ${maxAttention}`}
+                  >
+                    <span
+                      className="battle-attention-fill"
+                      style={{ width: `${attentionFillPercent}%` }}
+                    />
+                    {selectedCombatAction && attentionPreviewPercent > 0 ? (
+                      <span
+                        className="battle-attention-preview"
+                        style={{
+                          width: `${attentionPreviewPercent}%`,
+                          left: `${attentionPreviewOffsetPercent}%`,
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="battle-exploit-picker"
+                  disabled={!isCombatPhase}
+                  onClick={handleCycleExploit}
+                  aria-keyshortcuts="T"
+                >
+                  Exploit [T]: {selectedExploit?.name ?? 'Select Exploit'}
+                </button>
+              </>
+            ) : null}
           </section>
         ) : null}
         {isMenuOpen ? (
