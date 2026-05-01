@@ -1265,7 +1265,7 @@ function FeedScreen({
                 handle=""
                 status=""
                 contactText=""
-                avatarUrl="../../public/top_b.png"
+                avatarUrl={"../../public/" + combatEnemy?.id + ".png"}
                 showUserInfo={false}
                 enableTilt={true}
                 enableMobileTilt={false}
@@ -1388,18 +1388,7 @@ function FeedScreen({
                             }
                             onBlur={handleHoverClear}
                           >
-                            <span className="battle-action-icon-wrap" aria-hidden>
-                              {isLocked ? (
-                                <span className="battle-lock-icon">🔒</span>
-                              ) : (
-                                <img
-                                  src={ACTION_ICONS.exploit}
-                                  alt=""
-                                  className="battle-action-icon"
-                                  draggable={false}
-                                />
-                              )}
-                            </span>
+
                             <span className="battle-action-label">
                               {slot.name}
                               {keybind ? <span className="battle-action-keybind">{keybind}</span> : null}
@@ -1467,17 +1456,17 @@ function FeedScreen({
               )}
 
             </footer>
-            {!isPostCombatSummaryActive ? (
-              <p className="battle-turn-phase">
-                {isEnemyThinkingPhase
-                  ? 'Enemy is thinking...'
-                  : isEnemyRevealPhase
-                    ? 'Enemy action revealed'
-                    : isResolvingPhase
-                      ? 'Resolving actions...'
-                      : 'Select action and End Turn'}
-              </p>
-            ) : null}
+            {/*{!isPostCombatSummaryActive ? (*/}
+            {/*  <p className="battle-turn-phase">*/}
+            {/*    {isEnemyThinkingPhase*/}
+            {/*      ? 'Enemy is thinking...'*/}
+            {/*      : isEnemyRevealPhase*/}
+            {/*        ? 'Enemy action revealed'*/}
+            {/*        : isResolvingPhase*/}
+            {/*          ? 'Resolving actions...'*/}
+            {/*          : 'Select action and End Turn'}*/}
+            {/*  </p>*/}
+            {/*) : null}*/}
             {!isPostCombatSummaryActive ? (
               <>
                 <div className="battle-attention-panel" aria-label="Player attention">
@@ -1562,7 +1551,7 @@ function FeedScreen({
                 Resume
               </button>
               <button type="button" onClick={handleRestartSession}>
-                Restart Session
+                Exit To Main Menu
               </button>
               <button type="button" onClick={handleResumeGame}>
                 Close Menu

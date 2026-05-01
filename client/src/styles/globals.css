@@ -355,6 +355,19 @@ h1 {
     filter 120ms steps(2, end);
 }
 
+.start-play-button,
+.start-menu-button {
+  width: min(220px, 100%);
+}
+
+.start-menu-buttons {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+}
+
 .start-play-button:not(:disabled):hover {
   transform: translateY(1px) scale(1.04);
   box-shadow:
@@ -373,18 +386,13 @@ h1 {
     0 3px 0 #352822;
 }
 
-.start-menu-buttons {
-  margin-top: 0.9rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.6rem;
-}
-
 .start-menu-button {
   border: 2px solid #825574;
   border-radius: 0;
   background: #2d223a;
   color: #f5e9ff;
+  min-width: 220px;
+
   min-height: 46px;
   padding: 0.55rem 0.7rem;
   font-family: var(--font-pixel);
@@ -1391,7 +1399,6 @@ h1 {
 
 .battle-action-button {
   width: 100%;
-  min-height: 140px;
   padding: 0.6rem 0.5rem 0.48rem;
   border-radius: 0;
   border: 2px solid #838b9d;
@@ -1423,7 +1430,6 @@ h1 {
 }
 
 .battle-action-button-exploit {
-  min-height: 152px;
   background: linear-gradient(180deg, #2f3543, #262d3a);
   border-color: #8ca9c9;
 }
@@ -1492,7 +1498,6 @@ h1 {
 }
 
 .battle-action-cost {
-  margin-top: auto;
   color: #f4d17b;
   font-size: 0.92rem;
   font-weight: 700;
@@ -2733,4 +2738,179 @@ h1 {
       0 320px,
       0 0;
   }
+}
+
+.how-to-play-screen {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: clamp(2.8rem, 7.5vh, 5rem);
+  overflow: hidden;
+  background:
+          radial-gradient(circle at 20% 18%, rgba(255, 118, 26, 0.16), transparent 45%),
+          #08070d;
+}
+
+.how-to-play-panel {
+  position: relative;
+  z-index: 2;
+  width: min(980px, 100%);
+  border-radius: 0;
+  border: 2px solid #5a4054;
+  padding: clamp(1.4rem, 3vw, 2rem);
+  background:
+          linear-gradient(180deg, rgba(36, 23, 32, 0.96), rgba(20, 17, 28, 0.96)),
+          rgba(18, 13, 24, 0.92);
+  box-shadow:
+          inset 0 0 0 2px #140f1b,
+          0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.how-to-play-title {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: clamp(1.3rem, 4vw, 2.2rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffb16f;
+}
+
+.how-to-play-eyebrow {
+  color: #ff87b2;
+}
+
+.how-to-play-intro {
+  margin-top: 1rem;
+  max-width: 70ch;
+  color: #d2c3dd;
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+}
+
+.how-to-play-layout {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1.4rem;
+}
+
+.how-card {
+  border: 1px solid #73506a;
+  background: rgba(22, 17, 30, 0.92);
+  box-shadow: inset 0 0 0 2px #130d19;
+  padding: 1rem;
+  color: #efe3f8;
+}
+
+.how-card-wide {
+  grid-column: 1 / -1;
+}
+
+.how-card h2 {
+  margin: 0 0 0.7rem;
+  font-family: var(--font-pixel);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ff9fdb;
+}
+
+.how-card p,
+.how-card li {
+  margin: 0.4rem 0;
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  line-height: 1.25;
+  color: #d9cbe6;
+}
+
+.how-card ul,
+.how-card ol {
+  margin: 0.6rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.how-card li {
+  margin: 0.35rem 0;
+}
+
+.enemy-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.8rem;
+}
+
+.enemy-tile {
+  border: 1px solid #65506f;
+  background: rgba(33, 23, 42, 0.96);
+  box-shadow: inset 0 0 0 2px #110d18;
+  padding: 0.9rem;
+}
+
+.enemy-tile h3 {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-pixel);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd58d;
+}
+
+.enemy-role,
+.enemy-mini-title {
+  margin: 0.25rem 0 0.35rem;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #ff9fd1;
+}
+
+.enemy-tile ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.enemy-top-b {
+  border-color: #d38b48;
+}
+
+.enemy-kyle {
+  border-color: #8b6df0;
+}
+
+.enemy-michael {
+  border-color: #9b7b55;
+}
+
+.enemy-mr-least {
+  border-color: #e15050;
+}
+
+.enemy-arisloptle {
+  border-color: #8b8b8b;
+}
+
+.how-to-play-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.2rem;
+}
+
+.how-back-button {
+  min-width: 240px;
+  border-radius: 0;
+  border: 2px solid #a85d3c;
+  background: linear-gradient(180deg, #ffb04f, #ff7f2f 56%, #da5528 100%);
+  color: #27180f;
+  font-family: var(--font-pixel);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow:
+          inset 0 0 0 2px rgba(255, 216, 148, 0.45),
+          0 6px 0 #4a2417,
+          0 0 20px rgba(255, 110, 42, 0.18);
 }
