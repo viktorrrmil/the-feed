@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type CSSProperties,
   type PointerEventHandler,
 } from 'react'
@@ -42,7 +43,7 @@ interface FeedScreenProps {
 
 type SwipeAnimation = 'none' | 'snap-forward' | 'snap-back'
 type CombatActionType = 'attack' | 'block' | 'parry' | 'exploit'
-type ChatBubbleSide = 'left' | 'right'
+type ActionDetailKind = 'basic' | 'exploit'
 const ENCOUNTER_LOCK_MS = 2000
 const ENCOUNTER_TOTAL_MS = 2860
 const ENCOUNTER_START_DELAY_MS = 70
@@ -68,6 +69,13 @@ const ACTION_ICONS: Record<CombatActionType, string> = {
   parry: '/parry.png',
   exploit: '/exploit.png',
 }
+const EXPLOIT_LIBRARY = [
+  { id: 'focused_reply', name: 'Focused Reply', effect: 'Reliable strike. Consistent output.' },
+  { id: 'growth_hack', name: 'Growth Hack', effect: 'Variable hit. High upside with noise.' },
+  { id: 'volatility_engine', name: 'Volatility Engine', effect: 'Swingy burst. Wide damage spread.' },
+  { id: 'bait_loop', name: 'Bait Loop', effect: 'Pressure move. Scales with noise.' },
+]
+const LOCKED_EXPLOIT_SLOTS = 2
 interface CombatSummaryData {
   result: 'win' | 'lose'
   enemyName: string
@@ -76,11 +84,49 @@ interface CombatSummaryData {
   totalDamageTaken: number
   rewards: string[]
 }
-interface CombatChatEntry {
+interface ActionDetail {
   id: string
-  side: ChatBubbleSide
-  speaker: string
-  text: string
+  name: string
+  kind: ActionDetailKind
+  costLabel: string
+  damageLabel: string
+  effect: string
+}
+interface HoverCloudState {
+  x: number
+  y: number
+  actionId?: string
+  historyIndex?: number
+}
+
+function getExploitDamageRange(exploitId: string | undefined, noise: number) {
+  if (!exploitId) {
+    return { min: 0, max: 0 }
+  }
+  if (exploitId === 'focused_reply') {
+    const value = 11 + noise
+    return { min: value, max: value }
+  }
+  if (exploitId === 'growth_hack') {
+    return { min: 8 + noise, max: 11 + noise }
+  }
+  if (exploitId === 'volatility_engine') {
+    const base = 6 + noise
+    return { min: base, max: base + 7 }
+  }
+  if (exploitId === 'bait_loop') {
+    const value = 10 + noise
+    return { min: value, max: value }
+  }
+  const fallback = 9 + noise
+  return { min: fallback, max: fallback }
+}
+
+function formatDamageRange(min: number, max: number) {
+  if (max <= 0) {
+    return '0'
+  }
+  return min === max ? `${max}` : `${min}-${max}`
 }
 
 function FeedScreen({
@@ -141,6 +187,8 @@ function FeedScreen({
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [selectedExploitId, setSelectedExploitId] = useState('focused_reply')
   const [selectedCombatAction, setSelectedCombatAction] = useState<CombatActionType | null>(null)
+  const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState(0)
+  const [hoverCloud, setHoverCloud] = useState<HoverCloudState | null>(null)
   const [storedBestScore] = useState(() => {
     const persistedBestScore = Number.parseInt(
       window.localStorage.getItem(BEST_SCORE_STORAGE_KEY) ?? '0',
@@ -181,18 +229,18 @@ function FeedScreen({
   const inventoryIds = inventory
     .filter((entry): entry is { id: string; name?: string } => Boolean(entry?.id))
     .map((entry) => entry.id)
-  const equippedExploits = (Array.isArray(serverState?.exploits)
-    ? serverState.exploits
-    : []) as Array<PlayerExploit | null>
+  const equippedExploits = useMemo(
+    () =>
+      (Array.isArray(serverState?.exploits)
+        ? serverState.exploits
+        : []) as Array<PlayerExploit | null>,
+    [serverState],
+  )
   const disabledExploits = (combat?.disabledExploits ?? {}) as Record<string, number>
   const availableExploitIds = equippedExploits
     .filter((exploit): exploit is PlayerExploit => Boolean(exploit?.id))
     .map((exploit) => exploit.id)
-  const effectiveSelectedExploitId = availableExploitIds.includes(selectedExploitId)
-    ? selectedExploitId
-    : (availableExploitIds[0] ?? '')
-  const selectedExploit =
-    equippedExploits.find((exploit) => exploit?.id === effectiveSelectedExploitId) ?? null
+  const effectiveSelectedExploitId = selectedExploitId || (availableExploitIds[0] ?? '')
   const isReturnTransitionActive = isCombatReturnActive
   const isPostCombatSummaryActive = combatSummaryPending && !isReturnTransitionActive
   const isBattleMockupActive =
@@ -238,8 +286,8 @@ function FeedScreen({
     ),
   )
   const canUseExploitAction =
-    Boolean(selectedExploit?.id) &&
-    (selectedExploit?.id ? (disabledExploits[selectedExploit.id] ?? 0) === 0 : false)
+    Boolean(effectiveSelectedExploitId) &&
+    (effectiveSelectedExploitId ? (disabledExploits[effectiveSelectedExploitId] ?? 0) === 0 : false)
   const hasEnoughATForSelectedAction =
     selectedCombatAction !== null ? currentAttention >= ACTION_COSTS[selectedCombatAction] : false
   const canCommitSelectedAction =
@@ -247,32 +295,10 @@ function FeedScreen({
     Boolean(selectedCombatAction) &&
     hasEnoughATForSelectedAction &&
     (selectedCombatAction === 'exploit' ? canUseExploitAction : true)
-  const selectedExploitDamageRange = useMemo(() => {
-    const exploitId = selectedExploit?.id
-    if (!exploitId) {
-      return { min: 0, max: 0 }
-    }
-    if (exploitId === 'focused_reply') {
-      const value = 11 + currentNoise
-      return { min: value, max: value }
-    }
-    if (exploitId === 'growth_hack') {
-      return { min: 8 + currentNoise, max: 11 + currentNoise }
-    }
-    if (exploitId === 'volatility_engine') {
-      const base = 6 + currentNoise
-      return {
-        min: base,
-        max: base + 7,
-      }
-    }
-    if (exploitId === 'bait_loop') {
-      const value = 10 + currentNoise
-      return { min: value, max: value }
-    }
-    const fallback = 9 + currentNoise
-    return { min: fallback, max: fallback }
-  }, [currentNoise, selectedExploit?.id])
+  const selectedExploitDamageRange = useMemo(
+    () => getExploitDamageRange(effectiveSelectedExploitId, currentNoise),
+    [currentNoise, effectiveSelectedExploitId],
+  )
   const selectedActionDamageRange = useMemo(() => {
     if (!selectedCombatAction) {
       return { min: 0, max: 0 }
@@ -303,12 +329,113 @@ function FeedScreen({
       Math.round(((Math.min(combatEnemyHp, selectedActionDamagePreview) || 0) / combatEnemyMaxHp) * 100),
     ),
   )
-  const selectedActionDamageText =
-    selectedActionDamageRange.max <= 0
-      ? '0'
-      : selectedActionDamageRange.min === selectedActionDamageRange.max
-        ? `${selectedActionDamageRange.max}`
-        : `${selectedActionDamageRange.min}-${selectedActionDamageRange.max}`
+  const selectedActionDamageText = formatDamageRange(selectedActionDamageRange.min, selectedActionDamageRange.max)
+  const exploitSlots = useMemo(() => {
+    const equipped = equippedExploits
+      .filter((exploit): exploit is PlayerExploit => Boolean(exploit?.id))
+      .slice(0, 2)
+      .map((exploit) => ({
+        id: exploit.id,
+        name: exploit.name,
+        kind: exploit.kind,
+        locked: false,
+      }))
+
+    if (equipped.length < 2) {
+      for (const fallback of EXPLOIT_LIBRARY) {
+        if (equipped.some((slot) => slot.id === fallback.id)) {
+          continue
+        }
+        equipped.push({ id: fallback.id, name: fallback.name, kind: 'mock', locked: false })
+        if (equipped.length >= 2) {
+          break
+        }
+      }
+    }
+
+    const locked = EXPLOIT_LIBRARY.filter((exploit) => !equipped.some((slot) => slot.id === exploit.id))
+      .slice(0, LOCKED_EXPLOIT_SLOTS)
+      .map((exploit) => ({
+        id: `locked-${exploit.id}`,
+        baseId: exploit.id,
+        name: exploit.name,
+        kind: 'locked',
+        locked: true,
+      }))
+
+    return [...equipped, ...locked]
+  }, [equippedExploits])
+  const battleActionDetails = useMemo(() => {
+    const details: Record<string, ActionDetail> = {
+      attack: {
+        id: 'attack',
+        name: 'Attack',
+        kind: 'basic',
+        costLabel: `${ACTION_COSTS.attack} AT`,
+        damageLabel: formatDamageRange(12 + currentNoise * 2, 15 + currentNoise * 2),
+        effect: 'Direct damage. Strong and reliable.',
+      },
+      block: {
+        id: 'block',
+        name: 'Block',
+        kind: 'basic',
+        costLabel: `${ACTION_COSTS.block} AT`,
+        damageLabel: '0',
+        effect: 'Mitigates incoming damage this turn.',
+      },
+      parry: {
+        id: 'parry',
+        name: 'Parry',
+        kind: 'basic',
+        costLabel: `${ACTION_COSTS.parry} AT`,
+        damageLabel: '0',
+        effect: 'Counters enemy tempo and can punish.',
+      },
+    }
+    for (const slot of exploitSlots) {
+      if (slot.locked) {
+        details[slot.id] = {
+          id: slot.id,
+          name: `${slot.name} (Locked)`,
+          kind: 'exploit',
+          costLabel: '--',
+          damageLabel: '--',
+          effect: 'Unlock this exploit to use it in combat.',
+        }
+        continue
+      }
+      const range = getExploitDamageRange(slot.id, currentNoise)
+      const fallbackMeta = EXPLOIT_LIBRARY.find((exploit) => exploit.id === slot.id)
+      details[slot.id] = {
+        id: slot.id,
+        name: slot.name,
+        kind: 'exploit',
+        costLabel: `${ACTION_COSTS.exploit} AT`,
+        damageLabel: formatDamageRange(range.min, range.max),
+        effect: fallbackMeta?.effect ?? 'Exploit action. Scales with current noise.',
+      }
+    }
+    return details
+  }, [currentNoise, exploitSlots])
+  const combatHistory = useMemo(() => combatLog.slice(-8).reverse(), [combatLog])
+  const hoveredCloudActionDetail =
+    hoverCloud?.actionId ? (battleActionDetails[hoverCloud.actionId] ?? null) : null
+  const hoveredCloudHistoryTurn =
+    typeof hoverCloud?.historyIndex === 'number'
+      ? (combatHistory[hoverCloud.historyIndex] ?? combatHistory[0] ?? null)
+      : null
+  const isActionCloudVisible = Boolean(hoveredCloudActionDetail && !hoveredCloudHistoryTurn)
+  const isHistoryCloudVisible = Boolean(hoveredCloudHistoryTurn)
+  const hoverCloudWidth = 280
+  const hoverCloudHeight = 180
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const hoverCloudStyle: CSSProperties | undefined = hoverCloud
+    ? {
+        left: Math.min(Math.max(hoverCloud.x + 16, 10), viewportWidth - hoverCloudWidth - 10),
+        top: Math.min(Math.max(hoverCloud.y + 14, 10), viewportHeight - hoverCloudHeight - 10),
+      }
+    : undefined
   const enemyVisibleAction =
     revealedEnemyAction ??
     (latestCombatTurn
@@ -338,38 +465,6 @@ function FeedScreen({
   const didPlayerParry = latestEffects.some(
     (effect) => effect.target === 'player' && effect.label.toLowerCase().includes('parried'),
   )
-  const combatChatEntries = useMemo<CombatChatEntry[]>(() => {
-    if (combatLog.length === 0) {
-      return [
-        { id: 'intro-1', side: 'left', speaker: 'SYS', text: 'hostile channel stabilized.' },
-        { id: 'intro-2', side: 'right', speaker: 'YOU', text: 'ready to engage.' },
-        { id: 'intro-3', side: 'left', speaker: 'VOID', text: 'I can see you scrolling.' },
-        { id: 'intro-4', side: 'right', speaker: 'YOU', text: 'prove it.' },
-      ]
-    }
-
-    const turns = combatLog.slice(-4)
-    const startIndex = Math.max(0, combatLog.length - turns.length)
-
-    return turns.flatMap((turn, index) => {
-      const turnNumber = startIndex + index + 1
-      const turnId = `turn-${turnNumber}-${turn.playerAction}-${turn.enemyAction}`
-      return [
-        {
-          id: `${turnId}-enemy`,
-          side: 'left',
-          speaker: (combatEnemy?.name ?? 'Enemy').toUpperCase(),
-          text: `${turn.enemyAction} (${turn.enemyActionValue ?? 0} AT, cost ${turn.enemyActionCost ?? 0})`,
-        },
-        {
-          id: `${turnId}-player`,
-          side: 'right',
-          speaker: 'YOU',
-          text: `${turn.playerAction} (${turn.playerActionValue ?? 0} AT, cost ${turn.playerActionCost ?? 0})`,
-        },
-      ]
-    })
-  }, [combatEnemy?.name, combatLog])
   const bestScore = Math.max(score, storedBestScore)
 
   const setOffset = useCallback((value: number) => {
@@ -726,6 +821,17 @@ function FeedScreen({
     setSelectedExploitId(availableExploitIds[nextIndex])
     return true
   }, [availableExploitIds, effectiveSelectedExploitId, isCombatPhase])
+  const handleSelectExploitSlot = useCallback(
+    (exploitId: string) => {
+      if (!canActInCombat || currentAttention < ACTION_COSTS.exploit) {
+        return false
+      }
+      setSelectedExploitId(exploitId)
+      setSelectedCombatAction('exploit')
+      return true
+    },
+    [canActInCombat, currentAttention],
+  )
 
   const handleEndTurn = useCallback(() => {
     if (!canCommitSelectedAction || !selectedCombatAction) {
@@ -733,13 +839,43 @@ function FeedScreen({
     }
     const sent =
       selectedCombatAction === 'exploit'
-        ? onCombatAction('exploit', selectedExploit?.id)
+        ? onCombatAction('exploit', effectiveSelectedExploitId || undefined)
         : onCombatAction(selectedCombatAction)
     if (sent) {
       setSelectedCombatAction(null)
     }
     return sent
-  }, [canCommitSelectedAction, onCombatAction, selectedCombatAction, selectedExploit?.id])
+  }, [canCommitSelectedAction, effectiveSelectedExploitId, onCombatAction, selectedCombatAction])
+  const handleActionHoverStart = useCallback(
+    (detail: ActionDetail | null, event: ReactMouseEvent<HTMLElement>) => {
+      if (!detail) {
+        return
+      }
+      setHoverCloud({
+        x: event.clientX,
+        y: event.clientY,
+        actionId: detail.id,
+      })
+    },
+    [],
+  )
+  const handleHistoryHoverStart = useCallback(
+    (index: number, event: ReactMouseEvent<HTMLElement>) => {
+      setHoveredHistoryIndex(index)
+      setHoverCloud({
+        x: event.clientX,
+        y: event.clientY,
+        historyIndex: index,
+      })
+    },
+    [],
+  )
+  const handleHoverMove = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    setHoverCloud((previous) => (previous ? { ...previous, x: event.clientX, y: event.clientY } : previous))
+  }, [])
+  const handleHoverClear = useCallback(() => {
+    setHoverCloud(null)
+  }, [])
 
   useEffect(() => {
     if (
@@ -774,7 +910,7 @@ function FeedScreen({
       } else if (key === 'e') {
         handled = handleSelectCombatAction('parry')
       } else if (key === 'r') {
-        handled = handleSelectCombatAction('exploit')
+        handled = effectiveSelectedExploitId ? handleSelectExploitSlot(effectiveSelectedExploitId) : false
       } else if (key === 't') {
         handled = handleCycleExploit()
       } else if (key === ' ' || key === 'spacebar') {
@@ -794,12 +930,14 @@ function FeedScreen({
   }, [
     handleCycleExploit,
     handleEndTurn,
+    handleSelectExploitSlot,
     handleSelectCombatAction,
     isBattleMockupActive,
     isCombatPhase,
     isInteractionLocked,
     isPostCombatSummaryActive,
     isReturnTransitionActive,
+    effectiveSelectedExploitId,
   ])
 
   const finalizeSwipe = useCallback(() => {
@@ -1150,8 +1288,8 @@ function FeedScreen({
             ) : null}
 
             <aside
-              className={`battle-chat ${isPostCombatSummaryActive ? 'battle-chat-summary' : ''}`}
-              aria-label="Combat chat"
+              className={`battle-history ${isPostCombatSummaryActive ? 'battle-history-summary' : ''}`}
+              aria-label="Action history"
             >
               {isPostCombatSummaryActive && postCombatSummary ? (
                 <div className="battle-summary-panel">
@@ -1171,76 +1309,31 @@ function FeedScreen({
                   </p>
                 </div>
               ) : (
-                <div className="battle-chat-thread">
-                  {isEnemyThinkingPhase ? (
-                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
-                      <p className="battle-chat-speaker">{(combatEnemy?.name ?? 'Enemy').toUpperCase()}</p>
-                      <p className="battle-chat-text">Enemy is thinking...</p>
-                    </article>
-                  ) : null}
-                  {isEnemyRevealPhase && enemyVisibleAction ? (
-                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
-                      <p className="battle-chat-speaker">{(combatEnemy?.name ?? 'Enemy').toUpperCase()}</p>
-                      <p className="battle-chat-text">
-                        chooses {enemyVisibleAction.label} ({enemyVisibleAction.value} AT)
-                      </p>
-                    </article>
-                  ) : null}
-                  {isResolvingPhase ? (
-                    <article className="battle-chat-bubble battle-chat-bubble-right battle-chat-bubble-system">
-                      <p className="battle-chat-speaker">SYS</p>
-                      <p className="battle-chat-text">Resolving actions...</p>
-                    </article>
-                  ) : null}
-                  {combatChatEntries.map((entry, index) => (
-                    <article
-                      key={entry.id}
-                      className={`battle-chat-bubble battle-chat-bubble-${entry.side}`}
-                      style={{ '--chat-pop-delay': `${index * 60}ms` } as CSSProperties}
-                    >
-                      <p className="battle-chat-speaker">{entry.speaker}</p>
-                      <p className="battle-chat-text">{entry.text}</p>
-                    </article>
-                  ))}
-                  {latestCombatTurn?.effects?.slice(-6).map((effect, index) => (
-                    <article
-                      key={`effect-${effect.kind}-${effect.label}-${index}`}
-                      className={`battle-chat-bubble ${
-                        effect.target === 'enemy' ? 'battle-chat-bubble-right' : 'battle-chat-bubble-left'
-                      } battle-chat-bubble-system`}
-                      style={
-                        {
-                          '--chat-pop-delay': `${(combatChatEntries.length + index) * 45}ms`,
-                        } as CSSProperties
-                      }
-                    >
-                      <p className="battle-chat-speaker">RESOLVE</p>
-                      <p className="battle-chat-text">{effect.label}</p>
-                    </article>
-                  ))}
-                  {latestCombatTurn ? (
-                    <article
-                      className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system"
-                      style={{ '--chat-pop-delay': `${combatChatEntries.length * 60}ms` } as CSSProperties}
-                    >
-                      <p className="battle-chat-speaker">SYS</p>
-                      <p className="battle-chat-text">
-                        hit Δ enemy -{latestCombatTurn.playerDamage} / you -{latestCombatTurn.enemyDamage}
-                      </p>
-                    </article>
-                  ) : null}
-                  {latestCombatResult === 'win' ? (
-                    <article className="battle-chat-bubble battle-chat-bubble-right battle-chat-bubble-system">
-                      <p className="battle-chat-speaker">SYS</p>
-                      <p className="battle-chat-text">target neutralized.</p>
-                    </article>
-                  ) : null}
-                  {latestCombatResult === 'lose' ? (
-                    <article className="battle-chat-bubble battle-chat-bubble-left battle-chat-bubble-system">
-                      <p className="battle-chat-speaker">SYS</p>
-                      <p className="battle-chat-text">attention collapse detected.</p>
-                    </article>
-                  ) : null}
+                <div className="battle-history-content">
+                  <p className="battle-history-title">Action History</p>
+                  <div className="battle-history-list">
+                    {combatHistory.length === 0 ? (
+                      <p className="battle-history-empty">No turns yet.</p>
+                    ) : (
+                      combatHistory.map((turn, index) => (
+                        <button
+                          key={`history-${combatHistory.length}-${index}-${turn.playerAction}-${turn.enemyAction}`}
+                          type="button"
+                          className={`battle-history-item ${hoveredHistoryIndex === index ? 'battle-history-item-active' : ''}`}
+                          onMouseEnter={(event) => handleHistoryHoverStart(index, event)}
+                          onMouseMove={handleHoverMove}
+                          onMouseLeave={handleHoverClear}
+                          onFocus={(event) => handleHistoryHoverStart(index, event)}
+                          onBlur={handleHoverClear}
+                        >
+                          <span className="battle-history-item-turn">T{combatLog.length - index}</span>
+                          <span className="battle-history-item-text">
+                            {turn.playerAction} vs {turn.enemyAction}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
             </aside>
@@ -1257,60 +1350,122 @@ function FeedScreen({
                 </button>
               ) : (
                 <>
-                  {(['attack', 'block', 'parry', 'exploit'] as CombatActionType[]).map((action) => {
-                    const disabled =
-                      action === 'exploit'
-                        ? !canActInCombat || !canUseExploitAction || currentAttention < ACTION_COSTS[action]
-                        : !canActInCombat || currentAttention < ACTION_COSTS[action]
-                    return (
-                      <button
-                        key={action}
-                        type="button"
-                        className={`battle-action-button ${
-                          selectedCombatAction === action ? 'battle-action-button-selected' : ''
-                        }`}
-                        onClick={() => handleSelectCombatAction(action)}
-                        disabled={disabled}
-                        aria-pressed={selectedCombatAction === action}
-                        aria-keyshortcuts={
-                          action === 'attack'
-                            ? 'Q'
-                            : action === 'block'
-                              ? 'W'
-                              : action === 'parry'
-                                ? 'E'
-                                : 'R'
-                        }
-                      >
-                        <span className="battle-action-icon-wrap" aria-hidden>
-                          <img
-                            src={ACTION_ICONS[action]}
-                            alt=""
-                            className="battle-action-icon"
-                            draggable={false}
-                          />
-                        </span>
-                        <span className="battle-action-label">
-                          {ACTION_LABELS[action]}
-                          <span className="battle-action-keybind">
-                            [{action === 'attack' ? 'Q' : action === 'block' ? 'W' : action === 'parry' ? 'E' : 'R'}]
-                          </span>
-                        </span>
-                        <span className="battle-action-cost">{ACTION_COSTS[action]} AT</span>
-                      </button>
-                    )
-                  })}
+                  <div className="battle-action-groups">
+                    <p className="battle-action-section-title">Exploits</p>
+                    <div className="battle-exploit-grid" aria-label="Exploit actions">
+                      {exploitSlots.map((slot, index) => {
+                        const isLocked = slot.locked
+                        const isSelected =
+                          !isLocked && selectedCombatAction === 'exploit' && effectiveSelectedExploitId === slot.id
+                        const exploitDisabled =
+                          isLocked ||
+                          !canActInCombat ||
+                          currentAttention < ACTION_COSTS.exploit ||
+                          (slot.id ? (disabledExploits[slot.id] ?? 0) > 0 : true)
+                        const keybind = index === 0 ? '[R]' : index === 1 ? '[T]' : ''
+                        return (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            className={`battle-action-button battle-action-button-exploit ${
+                              isSelected ? 'battle-action-button-selected' : ''
+                            } ${isLocked ? 'battle-action-button-locked' : ''}`}
+                            onClick={() => {
+                              if (!isLocked) {
+                                handleSelectExploitSlot(slot.id)
+                              }
+                            }}
+                            disabled={exploitDisabled}
+                            aria-pressed={isSelected}
+                            aria-label={isLocked ? `${slot.name} locked` : `${slot.name} exploit`}
+                            onMouseEnter={(event) =>
+                              handleActionHoverStart(battleActionDetails[slot.id] ?? null, event)
+                            }
+                            onMouseMove={handleHoverMove}
+                            onMouseLeave={handleHoverClear}
+                            onFocus={(event) =>
+                              handleActionHoverStart(battleActionDetails[slot.id] ?? null, event)
+                            }
+                            onBlur={handleHoverClear}
+                          >
+                            <span className="battle-action-icon-wrap" aria-hidden>
+                              {isLocked ? (
+                                <span className="battle-lock-icon">🔒</span>
+                              ) : (
+                                <img
+                                  src={ACTION_ICONS.exploit}
+                                  alt=""
+                                  className="battle-action-icon"
+                                  draggable={false}
+                                />
+                              )}
+                            </span>
+                            <span className="battle-action-label">
+                              {slot.name}
+                              {keybind ? <span className="battle-action-keybind">{keybind}</span> : null}
+                            </span>
+                            <span className="battle-action-cost">
+                              {isLocked ? 'LOCKED' : `${ACTION_COSTS.exploit} AT`}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="battle-action-section-title battle-action-section-title-secondary">
+                      Basic Actions
+                    </p>
+                    <div className="battle-basic-actions" aria-label="Basic actions">
+                      {(['attack', 'block', 'parry'] as CombatActionType[]).map((action) => {
+                        const disabled = !canActInCombat || currentAttention < ACTION_COSTS[action]
+                        return (
+                          <button
+                            key={action}
+                            type="button"
+                            className={`battle-action-button battle-action-button-basic ${
+                              selectedCombatAction === action ? 'battle-action-button-selected' : ''
+                            }`}
+                            onClick={() => handleSelectCombatAction(action)}
+                            disabled={disabled}
+                            aria-pressed={selectedCombatAction === action}
+                            aria-keyshortcuts={
+                              action === 'attack' ? 'Q' : action === 'block' ? 'W' : 'E'
+                            }
+                            onMouseEnter={(event) => handleActionHoverStart(battleActionDetails[action], event)}
+                            onMouseMove={handleHoverMove}
+                            onMouseLeave={handleHoverClear}
+                            onFocus={(event) => handleActionHoverStart(battleActionDetails[action], event)}
+                            onBlur={handleHoverClear}
+                          >
+                            <span className="battle-action-icon-wrap" aria-hidden>
+                              <img src={ACTION_ICONS[action]} alt="" className="battle-action-icon" draggable={false} />
+                            </span>
+                            <span className="battle-action-label">
+                              {ACTION_LABELS[action]}
+                              <span className="battle-action-keybind">
+                                [{action === 'attack' ? 'Q' : action === 'block' ? 'W' : 'E'}]
+                              </span>
+                            </span>
+                            <span className="battle-action-cost">{ACTION_COSTS[action]} AT</span>
+                          </button>
+                        )
+                      })}
+
+                    </div>
+                  </div>
                   <button
-                    type="button"
-                    className="battle-end-turn"
-                    disabled={!canCommitSelectedAction}
-                    onClick={handleEndTurn}
-                    aria-keyshortcuts="Space"
+                      type="button"
+                      className="battle-end-turn"
+                      disabled={!canCommitSelectedAction}
+                      onClick={handleEndTurn}
+                      aria-keyshortcuts="Space"
                   >
-                    End Turn [Space]
+                    FINISH TURN
+                    [SPACE]
                   </button>
                 </>
+
               )}
+
             </footer>
             {!isPostCombatSummaryActive ? (
               <p className="battle-turn-phase">
@@ -1327,7 +1482,7 @@ function FeedScreen({
               <>
                 <div className="battle-attention-panel" aria-label="Player attention">
                   <div className="battle-attention-title-row">
-                    <span className="battle-attention-title">Attention (AT)</span>
+                    <span className="battle-attention-title">AT</span>
                     <span className="battle-attention-value">
                       {projectedAttention}/{maxAttention}
                     </span>
@@ -1358,16 +1513,43 @@ function FeedScreen({
                     ) : null}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="battle-exploit-picker"
-                  disabled={!isCombatPhase}
-                  onClick={handleCycleExploit}
-                  aria-keyshortcuts="T"
-                >
-                  Exploit [T]: {selectedExploit?.name ?? 'Select Exploit'}
-                </button>
               </>
+            ) : null}
+            {!isPostCombatSummaryActive && hoverCloud && (isActionCloudVisible || isHistoryCloudVisible) ? (
+              <div className="battle-hover-cloud" style={hoverCloudStyle} aria-live="polite">
+                {isActionCloudVisible && hoveredCloudActionDetail ? (
+                  <>
+                    <p className="battle-hover-cloud-title">
+                      {hoveredCloudActionDetail.kind === 'exploit' ? 'Exploit' : 'Basic'} •{' '}
+                      {hoveredCloudActionDetail.name}
+                    </p>
+                    <p>Cost: {hoveredCloudActionDetail.costLabel}</p>
+                    <p>Damage: {hoveredCloudActionDetail.damageLabel}</p>
+                    <p>Effect: {hoveredCloudActionDetail.effect}</p>
+                  </>
+                ) : null}
+                {isHistoryCloudVisible && hoveredCloudHistoryTurn ? (
+                  <>
+                    <p className="battle-hover-cloud-title">
+                      {hoveredCloudHistoryTurn.playerAction} vs {hoveredCloudHistoryTurn.enemyAction}
+                    </p>
+                    <p>
+                      Damage: dealt {hoveredCloudHistoryTurn.playerDamage}, taken{' '}
+                      {hoveredCloudHistoryTurn.enemyDamage}
+                    </p>
+                    <p>
+                      Costs: you {hoveredCloudHistoryTurn.playerActionCost ?? 0} AT, enemy{' '}
+                      {hoveredCloudHistoryTurn.enemyActionCost ?? 0} AT
+                    </p>
+                    <p>
+                      Effects:{' '}
+                      {hoveredCloudHistoryTurn.effects.length
+                        ? hoveredCloudHistoryTurn.effects.map((effect) => effect.label).join(', ')
+                        : 'None'}
+                    </p>
+                  </>
+                ) : null}
+              </div>
             ) : null}
           </section>
         ) : null}
