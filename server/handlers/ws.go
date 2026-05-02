@@ -92,6 +92,82 @@ func HandleWebSocket(c *gin.Context) {
 				log.Printf("ws state update send failed: %v", err)
 				return
 			}
+		case "SELECT_REWARD_EXPLOIT":
+			state, err := session.SelectRewardExploit(incoming.ExploitID)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send reward error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws reward state update send failed: %v", err)
+				return
+			}
+		case "RESOLVE_REWARD_ITEM":
+			state, err := session.ResolveRewardItem(incoming.ItemID, incoming.Decision)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send reward item error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws reward item state update send failed: %v", err)
+				return
+			}
+		case "COMPLETE_REWARDS":
+			state, err := session.CompleteRewards()
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send reward completion error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws reward completion state update send failed: %v", err)
+				return
+			}
+		case "UPDATE_LOADOUT":
+			state, err := session.UpdateLoadout(incoming.ExploitIDs)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send loadout error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws loadout state update send failed: %v", err)
+				return
+			}
 		case "COMBAT_ACTION":
 			playerAction := game.PlayerAction{
 				Action:    incoming.Action,

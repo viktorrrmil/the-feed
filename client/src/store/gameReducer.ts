@@ -94,6 +94,46 @@ export interface PlayerExploit {
   id: string
   name: string
   kind?: string
+  description?: string
+  effects?: StatEffect[]
+}
+
+export interface StatEffect {
+  stat: string
+  amount: number
+  description: string
+}
+
+export interface PlayerItem {
+  id: string
+  name: string
+  description?: string
+  image?: string
+  effects?: StatEffect[]
+  discardAttention?: number
+}
+
+export interface RewardItem {
+  item?: PlayerItem | null
+  decision?: string
+}
+
+export interface RewardState {
+  enemyId?: string
+  enemyName?: string
+  phase?: 'exploit_choice' | 'item_choice' | 'complete' | string
+  exploitOptions?: PlayerExploit[]
+  selectedExploitId?: string
+  itemRewards?: RewardItem[]
+  currentItemIndex?: number
+  discardAttentionSum?: number
+}
+
+export interface RunProgress {
+  combatsWon?: number
+  exploitsCollected?: number
+  itemsKept?: number
+  itemsDiscarded?: number
 }
 
 export interface ServerState {
@@ -101,8 +141,15 @@ export interface ServerState {
   score?: number
   attention?: number
   maxAttention?: number
+  attack?: number
+  block?: number
+  parry?: number
   noise?: number
   exploits?: Array<PlayerExploit | null>
+  inventory?: Array<PlayerExploit | null>
+  items?: Array<PlayerItem | null>
+  reward?: RewardState | null
+  progress?: RunProgress | null
   combat?: CombatSnapshot | null
   [key: string]: unknown
 }
@@ -261,12 +308,16 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
             ? 'game_over'
             : serverPhase === 'combat'
               ? state.pendingCombatStart
-                ? state.phase
+              ? state.phase
                 : 'combat'
+              : serverPhase === 'combat_resolved'
+                ? 'combat_resolved'
+              : serverPhase === 'reward_selection'
+                ? 'reward_selection'
+              : serverPhase === 'reward'
+                ? 'reward'
               : serverPhase === 'feed'
-                ? state.phase === 'combat' && !state.combatSummaryPending
-                  ? 'feed'
-                  : state.phase
+                ? 'feed'
                 : state.phase
         return {
           ...state,
@@ -274,10 +325,20 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
           phase,
           pendingCombatStart: serverPhase === 'combat' ? state.pendingCombatStart : false,
           pendingCombatEnemyId: serverPhase === 'combat' ? state.pendingCombatEnemyId : null,
-          combatSummaryPending: serverPhase === 'game_over' ? false : state.combatSummaryPending,
-          latestCombatTurn: phase === 'combat' || state.pendingCombatStart ? state.latestCombatTurn : null,
+          combatSummaryPending: false,
+          latestCombatTurn:
+            phase === 'combat' ||
+            phase === 'combat_resolved' ||
+            phase === 'reward_selection' ||
+            phase === 'reward' ||
+            state.pendingCombatStart
+              ? state.latestCombatTurn
+              : null,
           latestCombatResult:
             phase === 'combat' ||
+            phase === 'combat_resolved' ||
+            phase === 'reward_selection' ||
+            phase === 'reward' ||
             phase === 'game_over' ||
             state.pendingCombatStart ||
             state.combatSummaryPending
@@ -286,11 +347,14 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
           combatTurnPhase:
             typeof action.payload.state.combat?.turnPhase === 'string'
               ? action.payload.state.combat.turnPhase
-              : phase === 'combat'
+              : phase === 'combat' || phase === 'combat_resolved' || phase === 'reward_selection'
                 ? state.combatTurnPhase
                 : null,
           revealedEnemyAction:
-            action.payload.state.combat?.pendingEnemyAction ?? (phase === 'combat' ? state.revealedEnemyAction : null),
+            action.payload.state.combat?.pendingEnemyAction ??
+            (phase === 'combat' || phase === 'combat_resolved' || phase === 'reward_selection'
+              ? state.revealedEnemyAction
+              : null),
         }
       }
 
@@ -326,11 +390,16 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       if (action.payload?.type === 'COMBAT_END') {
         return {
           ...state,
-          phase: state.phase === 'combat' ? 'combat' : state.phase,
-          combatSummaryPending: action.payload.result === 'win',
+          phase:
+            action.payload.result === 'win'
+              ? 'combat_resolved'
+              : state.phase === 'combat'
+                ? 'combat'
+                : state.phase,
+          combatSummaryPending: false,
           latestCombatResult: action.payload.result ?? null,
           error: null,
-          combatTurnPhase: null,
+          combatTurnPhase: action.payload.result === 'win' ? 'resolved' : null,
           revealedEnemyAction: null,
         }
       }

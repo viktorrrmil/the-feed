@@ -30,9 +30,19 @@ function App() {
     combatSummaryPending,
     combatTurnPhase,
     revealedEnemyAction,
+    selectRewardExploit,
+    resolveRewardItem,
+    completeRewards,
+    updateLoadout,
   } = useGameState()
 
-  if (phase === 'feed' || phase === 'combat') {
+  if (
+    phase === 'feed' ||
+    phase === 'combat' ||
+    phase === 'combat_resolved' ||
+    phase === 'reward_selection' ||
+    phase === 'reward'
+  ) {
     const score = typeof serverState?.score === 'number' ? serverState.score : 0
     return (
         <FeedScreen
@@ -54,6 +64,10 @@ function App() {
             combatTurnPhase={combatTurnPhase}
             revealedEnemyAction={revealedEnemyAction}
             onCombatAction={sendCombatAction}
+            onRewardExploitSelect={selectRewardExploit}
+            onRewardItemDecision={resolveRewardItem}
+            onRewardComplete={completeRewards}
+            onLoadoutChange={updateLoadout}
         />
     )
   }

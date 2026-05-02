@@ -3,10 +3,12 @@ package models
 import "github.com/viktorrrmil/the-feed/server/game"
 
 type IncomingMessage struct {
-	Type      string `json:"type"`
-	Action    string `json:"action,omitempty"`
-	ExploitID string `json:"exploitId,omitempty"`
-	ItemID    string `json:"itemId,omitempty"`
+	Type       string   `json:"type"`
+	Action     string   `json:"action,omitempty"`
+	ExploitID  string   `json:"exploitId,omitempty"`
+	ExploitIDs []string `json:"exploitIds,omitempty"`
+	ItemID     string   `json:"itemId,omitempty"`
+	Decision   string   `json:"decision,omitempty"`
 }
 
 type StateUpdate struct {

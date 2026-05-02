@@ -97,10 +97,12 @@ func ProcessCombatTurnWithEnemyAction(
 
 	_, result := CheckCombatEnd(state)
 
-	if state.Phase == "combat" && state.Combat != nil {
-		state.Combat.Turn = "player"
-		state.Combat.TurnPhase = "player_select"
-		state.Combat.TurnCount++
+	if state.Combat != nil {
+		if state.Phase == "combat" {
+			state.Combat.Turn = "player"
+			state.Combat.TurnPhase = "player_select"
+			state.Combat.TurnCount++
+		}
 		state.Combat.Log = append(state.Combat.Log, *turnResult)
 	}
 
@@ -110,11 +112,11 @@ func ProcessCombatTurnWithEnemyAction(
 func buildPlayerCombatAction(state *GameState, action PlayerAction, rng *rand.Rand) (CombatAction, error) {
 	switch action.Action {
 	case actionAttack:
-		return CombatAction{Type: actionAttack, Label: "Attack", Cost: 9, Value: 9}, nil
+		return CombatAction{Type: actionAttack, Label: "Attack", Cost: 9, Value: state.Attack}, nil
 	case actionBlock:
-		return CombatAction{Type: actionBlock, Label: "Block", Cost: 5, Value: 5}, nil
+		return CombatAction{Type: actionBlock, Label: "Block", Cost: 5, Value: state.Block}, nil
 	case actionParry:
-		return CombatAction{Type: actionParry, Label: "Parry", Cost: 4, Value: 4}, nil
+		return CombatAction{Type: actionParry, Label: "Parry", Cost: 4, Value: state.Parry}, nil
 	case actionExploit:
 		exploit := findEquippedExploit(state, action.ExploitID)
 		if exploit == nil {
@@ -198,12 +200,34 @@ func exploitDamageValue(exploitID string, noise int, rng *rand.Rand) int {
 	switch exploitID {
 	case "focused_reply":
 		return 11 + noise
+	case "deep_scroll":
+		return 9 + noise
 	case "growth_hack":
 		return 8 + noise + rng.Intn(4)
 	case "volatility_engine":
 		return 6 + noise + rng.Intn(8)
 	case "bait_loop":
 		return 10 + noise
+	case "paywall_puncture":
+		return 12 + noise
+	case "value_injection":
+		return 10 + noise + rng.Intn(3)
+	case "pump_cycle":
+		return 9 + noise + rng.Intn(5)
+	case "dump_route":
+		return 13 + noise
+	case "copycat_kernel":
+		return 10 + noise
+	case "resell_cycle":
+		return 11 + noise
+	case "engagement_spike":
+		return 14 + noise
+	case "clickbait_loop":
+		return 11 + noise + rng.Intn(3)
+	case "interpretation_drift":
+		return 10 + noise + rng.Intn(5)
+	case "thesis_whiplash":
+		return 12 + noise + rng.Intn(4)
 	default:
 		return 9 + noise
 	}
@@ -330,13 +354,13 @@ func CheckCombatEnd(state *GameState) (bool, string) {
 	if !containsString(state.DefeatedEnemies, combat.Enemy.ID) {
 		state.DefeatedEnemies = append(state.DefeatedEnemies, combat.Enemy.ID)
 	}
-	if combat.Enemy.StealableExploit != nil && !containsExploit(state.Inventory, combat.Enemy.StealableExploit.ID) {
-		lootExploit := *combat.Enemy.StealableExploit
-		state.Inventory = append(state.Inventory, &lootExploit)
-	}
+	state.Progress.CombatsWon++
 	state.Score += 20
-	state.Phase = "feed"
-	state.Combat = nil
+	state.Phase = "combat_resolved"
+	state.Reward = buildRewardState(combat.Enemy, state, NewCombatRNG())
+	state.Combat.Turn = "resolved"
+	state.Combat.TurnPhase = "resolved"
+	state.Combat.PendingEnemyAction = nil
 	return true, "win"
 }
 

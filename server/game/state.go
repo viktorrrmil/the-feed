@@ -6,12 +6,24 @@ type GameState struct {
 	Score           int          `json:"score"`
 	Attention       int          `json:"attention"`
 	MaxAttention    int          `json:"maxAttention"`
+	Attack          int          `json:"attack"`
+	Block           int          `json:"block"`
+	Parry           int          `json:"parry"`
 	Noise           int          `json:"noise"`
 	DefeatedEnemies []string     `json:"defeatedEnemies"`
 	Exploits        [4]*Exploit  `json:"exploits"`
 	Inventory       []*Exploit   `json:"inventory"`
 	Items           []*Item      `json:"items"`
+	Reward          *RewardState `json:"reward"`
+	Progress        *RunProgress `json:"progress"`
 	Combat          *CombatState `json:"combat"`
+}
+
+type RunProgress struct {
+	CombatsWon        int `json:"combatsWon"`
+	ExploitsCollected int `json:"exploitsCollected"`
+	ItemsKept         int `json:"itemsKept"`
+	ItemsDiscarded    int `json:"itemsDiscarded"`
 }
 
 type CombatState struct {
@@ -101,30 +113,70 @@ type PlayerAction struct {
 }
 
 type Exploit struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Kind        string       `json:"kind"`
+	Description string       `json:"description"`
+	Effects     []StatEffect `json:"effects,omitempty"`
 }
 
 type Item struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID                string       `json:"id"`
+	Name              string       `json:"name"`
+	Description       string       `json:"description"`
+	Image             string       `json:"image"`
+	Effects           []StatEffect `json:"effects,omitempty"`
+	AttackDelta       int          `json:"attackDelta,omitempty"`
+	BlockDelta        int          `json:"blockDelta,omitempty"`
+	ParryDelta        int          `json:"parryDelta,omitempty"`
+	MaxAttentionDelta int          `json:"maxAttentionDelta,omitempty"`
+	NoiseDelta        int          `json:"noiseDelta,omitempty"`
+	DiscardAttention  int          `json:"discardAttention,omitempty"`
+}
+
+type StatEffect struct {
+	Stat        string `json:"stat"`
+	Amount      int    `json:"amount"`
+	Description string `json:"description"`
+}
+
+type RewardState struct {
+	EnemyID             string        `json:"enemyId"`
+	EnemyName           string        `json:"enemyName"`
+	Phase               string        `json:"phase"`
+	ExploitOptions      []*Exploit    `json:"exploitOptions"`
+	SelectedExploitID   string        `json:"selectedExploitId,omitempty"`
+	ItemRewards         []*RewardItem `json:"itemRewards"`
+	CurrentItemIndex    int           `json:"currentItemIndex"`
+	DiscardAttentionSum int           `json:"discardAttentionSum"`
+}
+
+type RewardItem struct {
+	Item     *Item  `json:"item"`
+	Decision string `json:"decision,omitempty"`
 }
 
 func NewGameState(sessionID string) *GameState {
-	focusedReply := &Exploit{ID: "focused_reply", Name: "Focused Reply", Kind: "damage"}
-	deepScroll := &Exploit{ID: "deep_scroll", Name: "Deep Scroll", Kind: "heal"}
+	focusedReply := cloneExploitDefinition("focused_reply")
+	deepScroll := cloneExploitDefinition("deep_scroll")
 
-	return &GameState{
+	state := &GameState{
 		SessionID:       sessionID,
 		Phase:           "feed",
 		Score:           0,
 		Attention:       100,
 		MaxAttention:    100,
+		Attack:          9,
+		Block:           5,
+		Parry:           4,
 		Noise:           1,
 		DefeatedEnemies: []string{},
 		Exploits:        [4]*Exploit{focusedReply, deepScroll, nil, nil},
 		Inventory:       []*Exploit{focusedReply, deepScroll},
 		Items:           []*Item{},
+		Progress:        &RunProgress{ExploitsCollected: 2},
 	}
+
+	recalculateDerivedStats(state)
+	return state
 }

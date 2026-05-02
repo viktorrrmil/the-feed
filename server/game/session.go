@@ -126,6 +126,142 @@ func (s *Session) ResolveCombatAction(action PlayerAction, enemyAction *CombatAc
 	return turn, combatResult, cloneState(s.State), nil
 }
 
+func (s *Session) SelectRewardExploit(exploitID string) (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if (s.State.Phase != "combat_resolved" && s.State.Phase != "reward_selection") || s.State.Reward == nil {
+		return nil, fmt.Errorf("reward selection is unavailable in phase %s", s.State.Phase)
+	}
+	if s.State.Reward.Phase != "exploit_choice" {
+		return nil, fmt.Errorf("exploit reward choice is already resolved")
+	}
+
+	var selected *Exploit
+	for _, option := range s.State.Reward.ExploitOptions {
+		if option != nil && option.ID == exploitID {
+			selected = cloneExploit(option)
+			break
+		}
+	}
+	if selected == nil {
+		return nil, fmt.Errorf("reward exploit %q is not available", exploitID)
+	}
+
+	s.State.Reward.SelectedExploitID = exploitID
+	s.State.Phase = "reward_selection"
+	if !containsExploit(s.State.Inventory, exploitID) {
+		s.State.Inventory = append(s.State.Inventory, selected)
+		s.State.Progress.ExploitsCollected++
+	}
+
+	if len(s.State.Reward.ItemRewards) == 0 {
+		s.State.Reward.Phase = "complete"
+	} else {
+		s.State.Reward.Phase = "item_choice"
+	}
+
+	return cloneState(s.State), nil
+}
+
+func (s *Session) ResolveRewardItem(itemID string, decision string) (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if (s.State.Phase != "combat_resolved" && s.State.Phase != "reward_selection") || s.State.Reward == nil {
+		return nil, fmt.Errorf("item reward is unavailable in phase %s", s.State.Phase)
+	}
+	if s.State.Reward.Phase != "item_choice" {
+		return nil, fmt.Errorf("item reward phase is %s", s.State.Reward.Phase)
+	}
+
+	s.State.Phase = "reward_selection"
+	reward := s.State.Reward
+	if reward.CurrentItemIndex >= len(reward.ItemRewards) {
+		reward.Phase = "complete"
+		return cloneState(s.State), nil
+	}
+
+	current := reward.ItemRewards[reward.CurrentItemIndex]
+	if current == nil || current.Item == nil {
+		return nil, fmt.Errorf("reward item is unavailable")
+	}
+	if current.Item.ID != itemID {
+		return nil, fmt.Errorf("item %q is not the current reward", itemID)
+	}
+
+	switch decision {
+	case "keep":
+		current.Decision = "keep"
+		applyKeptItem(s.State, cloneItem(current.Item))
+		s.State.Progress.ItemsKept++
+	case "discard":
+		current.Decision = "discard"
+		s.State.Attention = min(s.State.Attention+current.Item.DiscardAttention, s.State.MaxAttention)
+		reward.DiscardAttentionSum += current.Item.DiscardAttention
+		s.State.Progress.ItemsDiscarded++
+	default:
+		return nil, fmt.Errorf("unsupported item decision %q", decision)
+	}
+
+	reward.CurrentItemIndex++
+	if reward.CurrentItemIndex >= len(reward.ItemRewards) {
+		reward.Phase = "complete"
+	}
+
+	return cloneState(s.State), nil
+}
+
+func (s *Session) CompleteRewards() (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if (s.State.Phase != "combat_resolved" && s.State.Phase != "reward_selection") || s.State.Reward == nil {
+		return nil, fmt.Errorf("reward completion is unavailable in phase %s", s.State.Phase)
+	}
+	if s.State.Reward.Phase != "complete" {
+		return nil, fmt.Errorf("reward flow is not complete yet")
+	}
+
+	s.State.Reward = nil
+	s.State.Phase = "feed"
+	s.State.Combat = nil
+	return cloneState(s.State), nil
+}
+
+func (s *Session) UpdateLoadout(exploitIDs []string) (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State.Phase == "combat" || s.State.Phase == "combat_resolved" || s.State.Phase == "reward_selection" {
+		return nil, fmt.Errorf("cannot edit loadout during combat")
+	}
+	if len(exploitIDs) > len(s.State.Exploits) {
+		return nil, fmt.Errorf("cannot equip more than %d exploits", len(s.State.Exploits))
+	}
+
+	seen := map[string]struct{}{}
+	nextLoadout := [4]*Exploit{}
+	slot := 0
+	for _, exploitID := range exploitIDs {
+		if exploitID == "" {
+			continue
+		}
+		if _, exists := seen[exploitID]; exists {
+			return nil, fmt.Errorf("duplicate exploit %q in loadout", exploitID)
+		}
+		if !containsExploit(s.State.Inventory, exploitID) {
+			return nil, fmt.Errorf("exploit %q is not in inventory", exploitID)
+		}
+		seen[exploitID] = struct{}{}
+		nextLoadout[slot] = cloneExploitDefinition(exploitID)
+		slot++
+	}
+
+	s.State.Exploits = nextLoadout
+	return cloneState(s.State), nil
+}
+
 func cloneState(state *GameState) *GameState {
 	if state == nil {
 		return nil
@@ -133,9 +269,21 @@ func cloneState(state *GameState) *GameState {
 
 	cloned := *state
 	cloned.DefeatedEnemies = append([]string(nil), state.DefeatedEnemies...)
-	cloned.Exploits = state.Exploits
-	cloned.Inventory = append([]*Exploit(nil), state.Inventory...)
-	cloned.Items = append([]*Item(nil), state.Items...)
+	for index, exploit := range state.Exploits {
+		cloned.Exploits[index] = cloneExploit(exploit)
+	}
+	cloned.Inventory = cloneExploitList(state.Inventory)
+	cloned.Items = cloneItemList(state.Items)
+	if state.Progress != nil {
+		progressCloned := *state.Progress
+		cloned.Progress = &progressCloned
+	}
+	if state.Reward != nil {
+		rewardCloned := *state.Reward
+		rewardCloned.ExploitOptions = cloneExploitList(state.Reward.ExploitOptions)
+		rewardCloned.ItemRewards = cloneRewardItems(state.Reward.ItemRewards)
+		cloned.Reward = &rewardCloned
+	}
 
 	if state.Combat != nil {
 		combatCloned := *state.Combat
@@ -170,6 +318,54 @@ func cloneIntMap(input map[string]int) map[string]int {
 	cloned := make(map[string]int, len(input))
 	for key, value := range input {
 		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneExploitList(input []*Exploit) []*Exploit {
+	cloned := make([]*Exploit, 0, len(input))
+	for _, exploit := range input {
+		cloned = append(cloned, cloneExploit(exploit))
+	}
+	return cloned
+}
+
+func cloneExploit(exploit *Exploit) *Exploit {
+	if exploit == nil {
+		return nil
+	}
+	cloned := *exploit
+	cloned.Effects = append([]StatEffect(nil), exploit.Effects...)
+	return &cloned
+}
+
+func cloneItemList(input []*Item) []*Item {
+	cloned := make([]*Item, 0, len(input))
+	for _, item := range input {
+		cloned = append(cloned, cloneItem(item))
+	}
+	return cloned
+}
+
+func cloneItem(item *Item) *Item {
+	if item == nil {
+		return nil
+	}
+	cloned := *item
+	cloned.Effects = append([]StatEffect(nil), item.Effects...)
+	return &cloned
+}
+
+func cloneRewardItems(input []*RewardItem) []*RewardItem {
+	cloned := make([]*RewardItem, 0, len(input))
+	for _, rewardItem := range input {
+		if rewardItem == nil {
+			cloned = append(cloned, nil)
+			continue
+		}
+		entry := *rewardItem
+		entry.Item = cloneItem(rewardItem.Item)
+		cloned = append(cloned, &entry)
 	}
 	return cloned
 }

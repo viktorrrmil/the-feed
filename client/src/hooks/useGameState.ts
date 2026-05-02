@@ -55,6 +55,59 @@ export const useGameState = () => {
     [sendMessage],
   )
 
+  const selectRewardExploit = useCallback(
+    (exploitId: string): boolean => {
+      const sent = sendMessage({ type: 'SELECT_REWARD_EXPLOIT', exploitId })
+      if (!sent) {
+        dispatch({
+          type: 'FEED_SCROLL_FAILURE',
+          payload: 'Reward selection failed: socket is not connected',
+        })
+      }
+      return sent
+    },
+    [sendMessage],
+  )
+
+  const resolveRewardItem = useCallback(
+    (itemId: string, decision: 'keep' | 'discard'): boolean => {
+      const sent = sendMessage({ type: 'RESOLVE_REWARD_ITEM', itemId, decision })
+      if (!sent) {
+        dispatch({
+          type: 'FEED_SCROLL_FAILURE',
+          payload: 'Reward item decision failed: socket is not connected',
+        })
+      }
+      return sent
+    },
+    [sendMessage],
+  )
+
+  const completeRewards = useCallback((): boolean => {
+    const sent = sendMessage({ type: 'COMPLETE_REWARDS' })
+    if (!sent) {
+      dispatch({
+        type: 'FEED_SCROLL_FAILURE',
+        payload: 'Reward completion failed: socket is not connected',
+      })
+    }
+    return sent
+  }, [sendMessage])
+
+  const updateLoadout = useCallback(
+    (exploitIds: string[]): boolean => {
+      const sent = sendMessage({ type: 'UPDATE_LOADOUT', exploitIds })
+      if (!sent) {
+        dispatch({
+          type: 'FEED_SCROLL_FAILURE',
+          payload: 'Inventory update failed: socket is not connected',
+        })
+      }
+      return sent
+    },
+    [sendMessage],
+  )
+
   const createSession = useCallback(async () => {
     dispatch({ type: 'SESSION_CREATE_REQUEST' })
 
@@ -84,5 +137,9 @@ export const useGameState = () => {
     completeCombatEntrance,
     continueAfterCombatSummary,
     sendCombatAction,
+    selectRewardExploit,
+    resolveRewardItem,
+    completeRewards,
+    updateLoadout,
   }
 }
