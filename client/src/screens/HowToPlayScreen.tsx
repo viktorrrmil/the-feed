@@ -42,73 +42,101 @@ function HowToPlayScreen({ onBack }: HowToPlayScreenProps) {
                     <article className="how-card">
                         <h2>Combat Mode</h2>
                         <p>
-                            Combat is turn-based. You and the enemy use the same action system.
+                            Combat uses simultaneous resolution. You and the enemy choose actions, then both resolve together.
                         </p>
                         <ol>
-                            <li>Choose an action.</li>
-                            <li>End your turn.</li>
-                            <li>The enemy thinks for a short delay.</li>
-                            <li>The enemy action is revealed.</li>
-                            <li>Both actions resolve step by step.</li>
+                            <li>Choose your action.</li>
+                            <li>Finish your turn.</li>
+                            <li>The enemy selects an action after a short delay.</li>
+                            <li>Both actions are revealed.</li>
+                            <li>Actions resolve step by step.</li>
                         </ol>
+                        <p>
+                            Every turn is a trade. You must predict and outplay the enemy’s choice.
+                        </p>
                     </article>
 
                     <article className="how-card">
                         <h2>Actions</h2>
                         <ul>
                             <li>
-                                <strong>Attack:</strong> Deals damage using AT cost/value. Successful attacks refund
-                                AT based on damage dealt.
+                                <strong>Attack:</strong> Deals damage using AT. You regain AT based on actual damage dealt.
                             </li>
                             <li>
-                                <strong>Block:</strong> Reduces incoming attack damage using block strength.
+                                <strong>Block:</strong> Reduces incoming damage using its value. Prevents or minimizes loss.
                             </li>
                             <li>
-                                <strong>Parry:</strong> A high-risk counter that can reduce or fully reflect attacks.
+                                <strong>Parry:</strong> Counters attacks. If strong enough, reflects damage back to the enemy.
                             </li>
                             <li>
-                                <strong>Exploit:</strong> Special moves learned from enemies. You can equip up to 4.
+                                <strong>Exploit:</strong> Special abilities stolen from enemies. You can equip up to 4.
                             </li>
                         </ul>
+                        <p>
+                            All actions have cooldowns. Basic actions have short cooldowns, while exploits take longer to reuse.
+                        </p>
+                    </article>
+
+                    <article className="how-card how-card-wide">
+                        <h2>Combat Resolution</h2>
+                        <ul>
+                            <li><strong>Attack vs Attack:</strong> both sides deal full damage.</li>
+                            <li><strong>Attack vs Block:</strong> damage is reduced by block value.</li>
+                            <li><strong>Attack vs Parry:</strong> strong parry reflects damage back.</li>
+                        </ul>
+                        <p>
+                            You always see what the enemy chose before the result resolves. Pay attention to their patterns.
+                        </p>
                     </article>
 
                     <article className="how-card how-card-wide">
                         <h2>AT System</h2>
                         <p>
-                            AT is both your health and your combat resource. Attacks cost AT, blocking and parrying
-                            use AT as defensive value, and successful attacks refund AT based on damage dealt.
+                            AT is both your health and your resource. Every action costs AT, but successful actions can restore it.
                         </p>
                         <p>
-                            If AT reaches 0 in combat, you lose the run.
+                            Managing AT is key — overspending leaves you vulnerable, but playing too safe slows you down.
+                        </p>
+                        <p>
+                            If AT reaches 0 in combat, the run ends.
                         </p>
                     </article>
 
                     <article className="how-card">
-                        <h2>What You Always See</h2>
+                        <h2>Feed Interactions</h2>
                         <ul>
-                            <li>Your AT and health bar.</li>
-                            <li>Your equipped exploits.</li>
-                            <li>Your selected actions.</li>
-                            <li>The enemy HP and current stance.</li>
-                            <li>The enemy stance is revealed every turn.</li>
+                            <li>Scrolling past posts can restore a small amount of AT.</li>
+                            <li>Liking safe posts can also restore AT.</li>
+                            <li>Some posts are traps and give no benefit.</li>
+                            <li>Evil posts always trigger combat.</li>
                         </ul>
                     </article>
 
                     <article className="how-card">
-                        <h2>Progression</h2>
+                        <h2>Rewards</h2>
                         <ul>
-                            <li>You gain exploits from defeated enemies.</li>
-                            <li>You may receive items that affect AT or combat stats.</li>
-                            <li>Difficulty increases as you survive more posts.</li>
+                            <li>After winning a fight, you choose 1 of 2 exploits.</li>
+                            <li>You may also receive items that affect your stats.</li>
+                            <li>Items can be kept or discarded for AT.</li>
+                            <li>You return to the feed only after resolving rewards.</li>
+                        </ul>
+                    </article>
+
+                    <article className="how-card">
+                        <h2>Inventory</h2>
+                        <ul>
+                            <li>All collected exploits and items are stored during the run.</li>
+                            <li>You can equip up to 4 exploits at a time.</li>
+                            <li>Inventory can be edited outside combat.</li>
                         </ul>
                     </article>
 
                     <article className="how-card">
                         <h2>Run End</h2>
                         <ul>
-                            <li>You lose when your AT reaches 0 in combat.</li>
-                            <li>You win when all 5 enemies are defeated.</li>
-                            <li>Final score equals total posts survived.</li>
+                            <li>You lose when your AT reaches 0.</li>
+                            <li>You win by defeating all 5 enemies.</li>
+                            <li>Your score is the number of posts survived.</li>
                         </ul>
                     </article>
 
