@@ -9,7 +9,7 @@ import {
   type PointerEventHandler,
 } from 'react'
 import EvilPost from '../components/EvilPost'
-import ProfileCard from '../components/ProfileCard'
+import ProfileCard from '../components/ProfileCard.jsx'
 import Post from '../components/Post'
 import type {
   CombatActionPreview,
@@ -32,6 +32,7 @@ interface FeedScreenProps {
   score: number
   onScroll: () => boolean
   onAdvance: () => void
+  onLikePost: (postId: string) => boolean
   onCombatEntranceComplete: () => void
   onCombatSummaryContinue: () => void
   latestCombatTurn: CombatTurnResult | null
@@ -41,6 +42,7 @@ interface FeedScreenProps {
   combatSummaryPending: boolean
   combatTurnPhase: string | null
   revealedEnemyAction: CombatActionPreview | null
+  pendingPlayerAction: CombatActionPreview | null
   onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string) => boolean
   onRewardExploitSelect: (exploitId: string) => boolean
   onRewardItemDecision: (itemId: string, decision: 'keep' | 'discard') => boolean
@@ -51,9 +53,10 @@ interface FeedScreenProps {
 type SwipeAnimation = 'none' | 'snap-forward' | 'snap-back'
 type CombatActionType = 'attack' | 'block' | 'parry' | 'exploit'
 type ActionDetailKind = 'basic' | 'exploit'
-const ENCOUNTER_LOCK_MS = 2000
-const ENCOUNTER_TOTAL_MS = 2860
+const ENCOUNTER_LOCK_MS = 700
+const ENCOUNTER_TOTAL_MS = 980
 const ENCOUNTER_START_DELAY_MS = 70
+const RETURN_TO_FEED_MS = 420
 const BEST_SCORE_STORAGE_KEY = 'the-feed-best-score'
 const EMPTY_COMBAT_LOG: CombatTurnResult[] = []
 const EMPTY_INVENTORY: Array<PlayerExploit | null> = []
@@ -192,6 +195,7 @@ function FeedScreen({
   score,
   onScroll,
   onAdvance,
+  onLikePost,
   onCombatEntranceComplete,
   onCombatSummaryContinue,
   latestCombatTurn,
@@ -201,6 +205,7 @@ function FeedScreen({
   combatSummaryPending,
   combatTurnPhase,
   revealedEnemyAction,
+  pendingPlayerAction,
   onCombatAction,
   onRewardExploitSelect,
   onRewardItemDecision,
@@ -230,6 +235,7 @@ function FeedScreen({
   const [isEncounterActive, setIsEncounterActive] = useState(false)
   const [isEncounterLockPhase, setIsEncounterLockPhase] = useState(false)
   const [isCombatReturnActive, setIsCombatReturnActive] = useState(false)
+  const [isRewardClosing, setIsRewardClosing] = useState(false)
   const [isInputLocked, setIsInputLocked] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [selectedExploitId, setSelectedExploitId] = useState('focused_reply')
@@ -276,6 +282,7 @@ function FeedScreen({
   )
   const combatLog = Array.isArray(combat?.log) ? combat.log : EMPTY_COMBAT_LOG
   const combatTurn = combat?.turn
+  const playerCooldowns = (combat?.playerCooldowns ?? {}) as Record<string, number>
   const inventory = (Array.isArray(serverState?.inventory)
     ? serverState.inventory
     : EMPTY_INVENTORY) as Array<PlayerExploit | null>
@@ -306,7 +313,10 @@ function FeedScreen({
   const activeTurnPhase = combatTurnPhase ?? (typeof combat?.turnPhase === 'string' ? combat.turnPhase : null)
   const isEnemyThinkingPhase = activeTurnPhase === 'enemy_thinking'
   const isEnemyRevealPhase = activeTurnPhase === 'enemy_reveal'
-  const isResolvingPhase = activeTurnPhase === 'resolving'
+  const isResolvingPhase =
+    activeTurnPhase === 'resolving' ||
+    activeTurnPhase === 'resolving_costs' ||
+    activeTurnPhase === 'resolving_hits'
   const canActInCombat =
     connected &&
     isCombatPhase &&
@@ -348,13 +358,21 @@ function FeedScreen({
   )
   const canUseExploitAction =
     Boolean(effectiveSelectedExploitId) &&
-    (effectiveSelectedExploitId ? (disabledExploits[effectiveSelectedExploitId] ?? 0) === 0 : false)
+    (effectiveSelectedExploitId ? (disabledExploits[effectiveSelectedExploitId] ?? 0) === 0 : false) &&
+    (effectiveSelectedExploitId ? (playerCooldowns[effectiveSelectedExploitId] ?? 0) === 0 : false)
   const hasEnoughATForSelectedAction =
     selectedCombatAction !== null ? currentAttention >= ACTION_COSTS[selectedCombatAction] : false
+  const selectedActionCooldown =
+    selectedCombatAction === 'exploit'
+      ? playerCooldowns[effectiveSelectedExploitId] ?? 0
+      : selectedCombatAction
+        ? playerCooldowns[selectedCombatAction] ?? 0
+        : 0
   const canCommitSelectedAction =
     canActInCombat &&
     Boolean(selectedCombatAction) &&
     hasEnoughATForSelectedAction &&
+    selectedActionCooldown === 0 &&
     (selectedCombatAction === 'exploit' ? canUseExploitAction : true)
   const selectedExploitDamageRange = useMemo(
     () => getExploitDamageRange(effectiveSelectedExploitId, currentNoise),
@@ -503,6 +521,16 @@ function FeedScreen({
     { label: 'Parry', value: `${currentParry}` },
     { label: 'Noise', value: `${currentNoise}` },
   ]
+  const displayedPlayerAction =
+    pendingPlayerAction?.type === 'exploit' && pendingPlayerAction.exploitId
+      ? {
+          ...pendingPlayerAction,
+          label:
+            inventory.find((exploit) => exploit?.id === pendingPlayerAction.exploitId)?.name ??
+            pendingPlayerAction.label,
+        }
+      : pendingPlayerAction
+  const displayedEnemyAction = revealedEnemyAction
 
   const setOffset = useCallback((value: number) => {
     dragOffsetRef.current = value
@@ -774,10 +802,14 @@ function FeedScreen({
 
   const handleSelectCombatAction = useCallback(
     (action: CombatActionType) => {
+      const cooldown = playerCooldowns[action] ?? 0
       if (!canActInCombat) {
         return false
       }
       if (currentAttention < ACTION_COSTS[action]) {
+        return false
+      }
+      if (cooldown > 0) {
         return false
       }
       if (action === 'exploit' && !canUseExploitAction) {
@@ -786,7 +818,7 @@ function FeedScreen({
       setSelectedCombatAction(action)
       return true
     },
-    [canActInCombat, canUseExploitAction, currentAttention],
+    [canActInCombat, canUseExploitAction, currentAttention, playerCooldowns],
   )
 
   const handleCycleExploit = useCallback(() => {
@@ -800,14 +832,18 @@ function FeedScreen({
   }, [availableExploitIds, effectiveSelectedExploitId, isCombatPhase])
   const handleSelectExploitSlot = useCallback(
     (exploitId: string) => {
+      const cooldown = playerCooldowns[exploitId] ?? 0
       if (!canActInCombat || currentAttention < ACTION_COSTS.exploit) {
+        return false
+      }
+      if (cooldown > 0) {
         return false
       }
       setSelectedExploitId(exploitId)
       setSelectedCombatAction('exploit')
       return true
     },
-    [canActInCombat, currentAttention],
+    [canActInCombat, currentAttention, playerCooldowns],
   )
 
   useEffect(() => {
@@ -865,7 +901,29 @@ function FeedScreen({
     [onRewardItemDecision, reward?.currentItemIndex, reward?.itemRewards],
   )
 
-  const handleCompleteRewards = useCallback(() => onRewardComplete(), [onRewardComplete])
+  const handleLikeCurrentPost = useCallback(
+    (postId: string) => {
+      onLikePost(postId)
+    },
+    [onLikePost],
+  )
+
+  const handleReturnToFeed = useCallback(() => {
+    if (isRewardClosing) {
+      return false
+    }
+    setIsRewardClosing(true)
+    setIsCombatReturnActive(true)
+    setIsInputLocked(true)
+    returnTimerRef.current = window.setTimeout(() => {
+      onRewardComplete()
+      setIsRewardClosing(false)
+      setIsCombatReturnActive(false)
+      setIsInputLocked(false)
+      returnTimerRef.current = null
+    }, RETURN_TO_FEED_MS)
+    return true
+  }, [isRewardClosing, onRewardComplete])
 
   const handleEndTurn = useCallback(() => {
     if (!canCommitSelectedAction || !selectedCombatAction) {
@@ -906,6 +964,23 @@ function FeedScreen({
   )
   const handleHoverMove = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     setHoverCloud((previous) => (previous ? { ...previous, x: event.clientX, y: event.clientY } : previous))
+  }, [])
+  const handleActionFocus = useCallback((detail: ActionDetail | null, element: HTMLElement) => {
+    const bounds = element.getBoundingClientRect()
+    setHoverCloud({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+      actionId: detail?.id,
+    })
+  }, [])
+  const handleHistoryFocus = useCallback((index: number, element: HTMLElement) => {
+    const bounds = element.getBoundingClientRect()
+    setHoveredHistoryIndex(index)
+    setHoverCloud({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+      historyIndex: index,
+    })
   }, [])
   const handleHoverClear = useCallback(() => {
     setHoverCloud(null)
@@ -1185,6 +1260,7 @@ function FeedScreen({
             <div className="encounter-chaos-lines encounter-chaos-lines-a" />
             <div className="encounter-chaos-lines encounter-chaos-lines-b" />
             <div className="encounter-impact-skull">☠</div>
+            <div className="encounter-enemy-intro">{combatEnemy?.name ?? currentPost?.content.enemyName ?? 'UNKNOWN'}</div>
           </div>
         ) : null}
 
@@ -1377,9 +1453,9 @@ function FeedScreen({
               {currentPost ? (
                 <div className="feed-page feed-page-current" style={currentStyle}>
                   {currentPost.type === 'evil' ? (
-                    <EvilPost post={currentPost} isActive />
+                    <EvilPost post={currentPost} isActive onLike={handleLikeCurrentPost} />
                   ) : (
-                    <Post post={currentPost} />
+                    <Post post={currentPost} onLike={handleLikeCurrentPost} />
                   )}
                 </div>
               ) : null}
@@ -1387,9 +1463,9 @@ function FeedScreen({
               {nextPost ? (
                 <div className="feed-page feed-page-next" style={nextStyle}>
                   {nextPost.type === 'evil' ? (
-                    <EvilPost post={nextPost} isActive={false} />
+                    <EvilPost post={nextPost} isActive={false} onLike={handleLikeCurrentPost} />
                   ) : (
-                    <Post post={nextPost} />
+                    <Post post={nextPost} onLike={handleLikeCurrentPost} />
                   )}
                 </div>
               ) : null}
@@ -1455,9 +1531,17 @@ function FeedScreen({
                       On commit: -{selectedActionDamageText} HP
                     </p>
                     <p className="battle-enemy-preview-text">
+                      You chose:{' '}
+                      {displayedPlayerAction
+                        ? `${displayedPlayerAction.label} (cost ${displayedPlayerAction.cost}, value ${displayedPlayerAction.value})`
+                        : selectedCombatAction
+                          ? `${ACTION_LABELS[selectedCombatAction]} (cost ${ACTION_COSTS[selectedCombatAction]})`
+                          : 'pending'}
+                    </p>
+                    <p className="battle-enemy-preview-text">
                       Enemy action:{' '}
-                      {enemyVisibleAction
-                        ? `${enemyVisibleAction.label} (${enemyVisibleAction.value} AT, cost ${enemyVisibleAction.cost})`
+                      {displayedEnemyAction
+                        ? `${displayedEnemyAction.label} (cost ${displayedEnemyAction.cost}, value ${displayedEnemyAction.value})`
                         : isEnemyThinkingPhase
                           ? 'thinking...'
                           : 'pending'}
@@ -1510,7 +1594,7 @@ function FeedScreen({
                         onMouseEnter={(event) => handleHistoryHoverStart(index, event)}
                         onMouseMove={handleHoverMove}
                         onMouseLeave={handleHoverClear}
-                        onFocus={(event) => handleHistoryHoverStart(index, event)}
+                        onFocus={(event) => handleHistoryFocus(index, event.currentTarget)}
                         onBlur={handleHoverClear}
                       >
                         <span className="battle-history-item-turn">T{combatLog.length - index}</span>
@@ -1532,9 +1616,11 @@ function FeedScreen({
                       {exploitSlots.map((slot, index) => {
                         const isSelected =
                           selectedCombatAction === 'exploit' && effectiveSelectedExploitId === slot.id
+                        const cooldown = playerCooldowns[slot.id] ?? 0
                         const exploitDisabled =
                           !canActInCombat ||
                           currentAttention < ACTION_COSTS.exploit ||
+                          cooldown > 0 ||
                           (slot.id ? (disabledExploits[slot.id] ?? 0) > 0 : true)
                         const keybind = index === 0 ? '[R]' : index === 1 ? '[T]' : ''
                         return (
@@ -1543,7 +1629,7 @@ function FeedScreen({
                             type="button"
                             className={`battle-action-button battle-action-button-exploit ${
                               isSelected ? 'battle-action-button-selected' : ''
-                            }`}
+                            } ${cooldown > 0 ? 'battle-action-button-cooldown' : ''}`}
                             onClick={() => handleSelectExploitSlot(slot.id)}
                             disabled={exploitDisabled}
                             aria-pressed={isSelected}
@@ -1553,9 +1639,7 @@ function FeedScreen({
                             }
                             onMouseMove={handleHoverMove}
                             onMouseLeave={handleHoverClear}
-                            onFocus={(event) =>
-                              handleActionHoverStart(battleActionDetails[slot.id] ?? null, event)
-                            }
+                            onFocus={(event) => handleActionFocus(battleActionDetails[slot.id] ?? null, event.currentTarget)}
                             onBlur={handleHoverClear}
                           >
 
@@ -1564,6 +1648,7 @@ function FeedScreen({
                               {keybind ? <span className="battle-action-keybind">{keybind}</span> : null}
                             </span>
                             <span className="battle-action-cost">{ACTION_COSTS.exploit} AT</span>
+                            {cooldown > 0 ? <span className="battle-action-cooldown">CD {cooldown}</span> : null}
                           </button>
                         )
                       })}
@@ -1573,14 +1658,15 @@ function FeedScreen({
                     </p>
                     <div className="battle-basic-actions" aria-label="Basic actions">
                       {(['attack', 'block', 'parry'] as CombatActionType[]).map((action) => {
-                        const disabled = !canActInCombat || currentAttention < ACTION_COSTS[action]
+                        const cooldown = playerCooldowns[action] ?? 0
+                        const disabled = !canActInCombat || currentAttention < ACTION_COSTS[action] || cooldown > 0
                         return (
                           <button
                             key={action}
                             type="button"
                             className={`battle-action-button battle-action-button-basic ${
                               selectedCombatAction === action ? 'battle-action-button-selected' : ''
-                            }`}
+                            } ${cooldown > 0 ? 'battle-action-button-cooldown' : ''}`}
                             onClick={() => handleSelectCombatAction(action)}
                             disabled={disabled}
                             aria-pressed={selectedCombatAction === action}
@@ -1590,7 +1676,7 @@ function FeedScreen({
                             onMouseEnter={(event) => handleActionHoverStart(battleActionDetails[action], event)}
                             onMouseMove={handleHoverMove}
                             onMouseLeave={handleHoverClear}
-                            onFocus={(event) => handleActionHoverStart(battleActionDetails[action], event)}
+                            onFocus={(event) => handleActionFocus(battleActionDetails[action], event.currentTarget)}
                             onBlur={handleHoverClear}
                           >
                             <span className="battle-action-icon-wrap" aria-hidden>
@@ -1603,6 +1689,7 @@ function FeedScreen({
                               </span>
                             </span>
                             <span className="battle-action-cost">{ACTION_COSTS[action]} AT</span>
+                            {cooldown > 0 ? <span className="battle-action-cooldown">CD {cooldown}</span> : null}
                           </button>
                         )
                       })}
@@ -1634,6 +1721,19 @@ function FeedScreen({
             {/*  </p>*/}
             {/*) : null}*/}
             {!isPostCombatSummaryActive ? (
+              <p className="battle-turn-phase">
+                {isEnemyThinkingPhase
+                  ? 'Enemy is thinking...'
+                  : isEnemyRevealPhase
+                    ? 'Actions locked. Enemy revealed.'
+                    : activeTurnPhase === 'resolving_costs'
+                      ? 'Step 1/2: spending AT'
+                      : activeTurnPhase === 'resolving_hits'
+                        ? 'Step 2/2: resolving damage'
+                        : 'Choose one action. Both sides resolve at the same time.'}
+              </p>
+            ) : null}
+            {!isPostCombatSummaryActive ? (
               <>
                 <div className="battle-attention-panel" aria-label="Player attention">
                   <div className="battle-attention-title-row">
@@ -1647,6 +1747,7 @@ function FeedScreen({
                     <span>NOISE {currentNoise}</span>
                     <span>SPENT {latestCombatTurn?.playerATSpent ?? 0}</span>
                     <span>REFUND {latestCombatTurn?.playerATRefund ?? 0}</span>
+                    <span>CD {Object.keys(playerCooldowns).length}</span>
                   </div>
                   <div
                     className="battle-attention-track"
@@ -1709,8 +1810,13 @@ function FeedScreen({
           </section>
         ) : null}
         {isRewardOverlayActive && reward ? (
-          <section className="reward-overlay" role="dialog" aria-modal="true" aria-label="Combat rewards">
-            <div className="reward-panel">
+          <section
+            className={`reward-overlay ${isRewardClosing ? 'reward-overlay-closing' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Combat rewards"
+          >
+            <div className={`reward-panel ${isRewardClosing ? 'reward-panel-closing' : ''}`}>
               <p className="reward-kicker">Victory Rewards</p>
               <h2>{reward.enemyName ?? 'Unknown Enemy'} Routed</h2>
 
@@ -1790,7 +1896,7 @@ function FeedScreen({
                       </div>
                     </div>
                   ) : (
-                    <button type="button" className="reward-cta" onClick={handleCompleteRewards}>
+                    <button type="button" className="reward-cta" onClick={handleReturnToFeed}>
                       Return to Feed
                     </button>
                   )}
@@ -1807,7 +1913,7 @@ function FeedScreen({
                     <span>Items Resolved: {rewardResolvedItems.length}</span>
                     <span>Discard AT Gained: +{reward.discardAttentionSum ?? 0}</span>
                   </div>
-                  <button type="button" className="reward-cta" onClick={handleCompleteRewards}>
+                  <button type="button" className="reward-cta" onClick={handleReturnToFeed}>
                     Return to Feed
                   </button>
                 </>

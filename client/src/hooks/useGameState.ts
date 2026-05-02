@@ -30,8 +30,26 @@ export const useGameState = () => {
   }, [sendMessage])
 
   const advanceFeed = useCallback(() => {
+    const currentPostId = state.feedPosts[0]?.id
+    if (currentPostId) {
+      sendMessage({ type: 'ADVANCE_FEED', postId: currentPostId })
+    }
     dispatch({ type: 'FEED_ADVANCE' })
-  }, [])
+  }, [sendMessage, state.feedPosts])
+
+  const likePost = useCallback(
+    (postId: string): boolean => {
+      const sent = sendMessage({ type: 'LIKE_POST', postId })
+      if (!sent) {
+        dispatch({
+          type: 'FEED_SCROLL_FAILURE',
+          payload: 'Post like failed: socket is not connected',
+        })
+      }
+      return sent
+    },
+    [sendMessage],
+  )
 
   const completeCombatEntrance = useCallback(() => {
     dispatch({ type: 'COMBAT_ENTRANCE_COMPLETE' })
@@ -43,8 +61,27 @@ export const useGameState = () => {
 
   const sendCombatAction = useCallback(
     (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string): boolean => {
+      const previewValue =
+        action === 'attack'
+          ? state.serverState?.attack ?? 9
+          : action === 'block'
+            ? state.serverState?.block ?? 5
+            : action === 'parry'
+              ? state.serverState?.parry ?? 4
+              : 0
+      dispatch({
+        type: 'COMBAT_ACTION_QUEUED',
+        payload: {
+          type: action,
+          label: action === 'exploit' ? 'Exploit' : action[0].toUpperCase() + action.slice(1),
+          cost: action === 'attack' ? 9 : action === 'block' ? 5 : action === 'parry' ? 4 : 8,
+          value: previewValue,
+          exploitId,
+        },
+      })
       const sent = sendMessage({ type: 'COMBAT_ACTION', action, exploitId })
       if (!sent) {
+        dispatch({ type: 'COMBAT_ACTION_QUEUED', payload: null })
         dispatch({
           type: 'FEED_SCROLL_FAILURE',
           payload: 'Combat action failed: socket is not connected',
@@ -52,7 +89,7 @@ export const useGameState = () => {
       }
       return sent
     },
-    [sendMessage],
+    [sendMessage, state.serverState?.attack, state.serverState?.block, state.serverState?.parry],
   )
 
   const selectRewardExploit = useCallback(
@@ -134,6 +171,7 @@ export const useGameState = () => {
     createSession,
     scrollFeed,
     advanceFeed,
+    likePost,
     completeCombatEntrance,
     continueAfterCombatSummary,
     sendCombatAction,

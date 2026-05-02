@@ -8,6 +8,7 @@ type IncomingMessage struct {
 	ExploitID  string   `json:"exploitId,omitempty"`
 	ExploitIDs []string `json:"exploitIds,omitempty"`
 	ItemID     string   `json:"itemId,omitempty"`
+	PostID     string   `json:"postId,omitempty"`
 	Decision   string   `json:"decision,omitempty"`
 }
 

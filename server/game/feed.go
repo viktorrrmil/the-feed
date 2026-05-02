@@ -20,12 +20,16 @@ type FeedPost struct {
 }
 
 type FeedPostContent struct {
-	Author    string `json:"author"`
-	Handle    string `json:"handle"`
-	Message   string `json:"message"`
-	Likes     int    `json:"likes,omitempty"`
-	EnemyID   string `json:"enemyId,omitempty"`
-	EnemyName string `json:"enemyName,omitempty"`
+	Author      string `json:"author"`
+	Handle      string `json:"handle"`
+	Message     string `json:"message"`
+	Likes       int    `json:"likes,omitempty"`
+	EnemyID     string `json:"enemyId,omitempty"`
+	EnemyName   string `json:"enemyName,omitempty"`
+	IsOff       bool   `json:"isOff,omitempty"`
+	IsTrap      bool   `json:"isTrap,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	GlitchLevel int    `json:"glitchLevel,omitempty"`
 }
 
 type FeedGenerator struct {
@@ -60,14 +64,26 @@ var normalAuthors = []struct {
 	{name: "Mika", handle: "@mika_feed"},
 }
 
-var normalPostTemplates = []string{
-	"Shipped a tiny feature and suddenly everything feels possible.",
-	"Reminder: your worth is not your engagement graph.",
-	"Who else re-reads old messages before hitting send?",
-	"Today's build broke three times. Fourth deploy is clean.",
-	"Hot take: kindness scales better than growth hacks.",
-	"My focus mode playlist is now 92% rain sounds.",
-	"Logging off for a walk. The feed will survive without me.",
+type normalPostProfile struct {
+	Message     string
+	IsOff       bool
+	IsTrap      bool
+	Tag         string
+	GlitchLevel int
+}
+
+var normalPostProfiles = []normalPostProfile{
+	{Message: "Shipped a tiny feature and suddenly everything feels possible.", Tag: "#buildlog"},
+	{Message: "Reminder: your worth is not your engagement graph.", Tag: "#grounded"},
+	{Message: "Who else re-reads old messages before hitting send?", Tag: "#latepost"},
+	{Message: "Today's build broke three times. Fourth deploy is clean.", Tag: "#devloop"},
+	{Message: "Hot take: kindness scales better than growth hacks.", Tag: "#softmetrics"},
+	{Message: "My focus mode playlist is now 92% rain sounds.", Tag: "#focuscore"},
+	{Message: "Logging off for a walk. The feed will survive without me.", Tag: "#offlinewin"},
+	{Message: "Everything looks fine here. Probably. #freshsignal", IsOff: true, Tag: "#freshsignal", GlitchLevel: 1},
+	{Message: "Muting one word somehow made the whole timeline louder.", IsOff: true, Tag: "#mutedbutnot", GlitchLevel: 1},
+	{Message: "Nice clean update. Nothing weird in the replies. #totallynormal", IsOff: true, IsTrap: true, Tag: "#totallynormal", GlitchLevel: 2},
+	{Message: "This account posts exactly once a day and it still feels wrong.", IsOff: true, Tag: "#offbeat", GlitchLevel: 2},
 }
 
 var evilPostTemplates = []string{
@@ -116,6 +132,7 @@ func (g *FeedGenerator) nextEvilPostForState(state *GameState) *FeedPost {
 	}
 
 	state.Phase = "game_over"
+	state.Outcome = "victory"
 	return &FeedPost{
 		ID:   g.nextPostID("normal"),
 		Type: PostTypeNormal,
@@ -130,16 +147,20 @@ func (g *FeedGenerator) nextEvilPostForState(state *GameState) *FeedPost {
 
 func (g *FeedGenerator) newNormalPost() *FeedPost {
 	author := normalAuthors[g.rng.Intn(len(normalAuthors))]
-	message := normalPostTemplates[g.rng.Intn(len(normalPostTemplates))]
+	profile := normalPostProfiles[g.rng.Intn(len(normalPostProfiles))]
 
 	return &FeedPost{
 		ID:   g.nextPostID("normal"),
 		Type: PostTypeNormal,
 		Content: FeedPostContent{
-			Author:  author.name,
-			Handle:  author.handle,
-			Message: message,
-			Likes:   8 + g.rng.Intn(340),
+			Author:      author.name,
+			Handle:      author.handle,
+			Message:     profile.Message,
+			Likes:       8 + g.rng.Intn(340),
+			IsOff:       profile.IsOff,
+			IsTrap:      profile.IsTrap,
+			Tag:         profile.Tag,
+			GlitchLevel: profile.GlitchLevel,
 		},
 	}
 }

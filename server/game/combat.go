@@ -26,6 +26,8 @@ func StartCombat(state *GameState, enemyID string) (*Enemy, error) {
 		EnemyDebuffs:     map[string]int{},
 		PlayerDebuffs:    map[string]int{},
 		DisabledExploits: map[string]int{},
+		PlayerCooldowns:  map[string]int{},
+		EnemyCooldowns:   map[string]int{},
 		Log:              []TurnResult{},
 	}
 
@@ -55,9 +57,11 @@ func PreviewEnemyCombatAction(state *GameState, playerAction PlayerAction, rng *
 	if state.Combat.Turn != "player" {
 		return nil, fmt.Errorf("combat turn is currently %s", state.Combat.Turn)
 	}
-	if _, err := buildPlayerCombatAction(state, playerAction, rng); err != nil {
+	playerCombatAction, err := buildPlayerCombatAction(state, playerAction, rng)
+	if err != nil {
 		return nil, err
 	}
+	state.Combat.PendingPlayerAction = &playerCombatAction
 	enemyAction := decideEnemyAction(state, playerAction, rng)
 	state.Combat.PendingEnemyAction = &enemyAction
 	return &enemyAction, nil
@@ -75,7 +79,6 @@ func ProcessCombatTurnWithEnemyAction(
 	if state.Combat.Turn != "player" {
 		return nil, "", fmt.Errorf("combat turn is currently %s", state.Combat.Turn)
 	}
-	advanceStatusEffects(state)
 	combat := state.Combat
 
 	playerAction, err := buildPlayerCombatAction(state, playerSelection, rng)
@@ -89,8 +92,14 @@ func ProcessCombatTurnWithEnemyAction(
 		enemyAction = decideEnemyAction(state, playerSelection, rng)
 	}
 	combat.PendingEnemyAction = nil
+	combat.PendingPlayerAction = nil
 
 	turnResult := resolveSymmetricTurn(state, playerAction, enemyAction)
+	advanceStatusEffects(state)
+	advanceCooldowns(combat.PlayerCooldowns)
+	advanceCooldowns(combat.EnemyCooldowns)
+	applyActionCooldown(combat.PlayerCooldowns, playerAction)
+	applyActionCooldown(combat.EnemyCooldowns, enemyAction)
 	combat.LastEnemyAction = enemyAction.Type
 	combat.LastEnemyActionValue = enemyAction.Value
 	combat.LastEnemyActionCost = enemyAction.Cost
@@ -110,17 +119,34 @@ func ProcessCombatTurnWithEnemyAction(
 }
 
 func buildPlayerCombatAction(state *GameState, action PlayerAction, rng *rand.Rand) (CombatAction, error) {
+	combat := state.Combat
+	if combat == nil {
+		return CombatAction{}, fmt.Errorf("combat state is unavailable")
+	}
+
 	switch action.Action {
 	case actionAttack:
+		if combat.PlayerCooldowns[actionAttack] > 0 {
+			return CombatAction{}, fmt.Errorf("attack is on cooldown")
+		}
 		return CombatAction{Type: actionAttack, Label: "Attack", Cost: 9, Value: state.Attack}, nil
 	case actionBlock:
+		if combat.PlayerCooldowns[actionBlock] > 0 {
+			return CombatAction{}, fmt.Errorf("block is on cooldown")
+		}
 		return CombatAction{Type: actionBlock, Label: "Block", Cost: 5, Value: state.Block}, nil
 	case actionParry:
+		if combat.PlayerCooldowns[actionParry] > 0 {
+			return CombatAction{}, fmt.Errorf("parry is on cooldown")
+		}
 		return CombatAction{Type: actionParry, Label: "Parry", Cost: 4, Value: state.Parry}, nil
 	case actionExploit:
 		exploit := findEquippedExploit(state, action.ExploitID)
 		if exploit == nil {
 			return CombatAction{}, fmt.Errorf("exploit %q is not equipped", action.ExploitID)
+		}
+		if combat.PlayerCooldowns[exploit.ID] > 0 {
+			return CombatAction{}, fmt.Errorf("exploit %q is on cooldown", exploit.ID)
 		}
 		if state.Combat.DisabledExploits[exploit.ID] > 0 {
 			return CombatAction{}, fmt.Errorf("exploit %q is currently disabled", exploit.ID)
@@ -145,7 +171,8 @@ func decideEnemyAction(state *GameState, playerSelection PlayerAction, rng *rand
 	enemyAT := combat.EnemyHP
 	candidates := make([]CombatAction, 0, 4)
 	pushIfAffordable := func(action CombatAction) {
-		if enemyAT >= action.Cost {
+		cooldownKey := cooldownKeyForAction(action)
+		if enemyAT >= action.Cost && combat.EnemyCooldowns[cooldownKey] == 0 {
 			candidates = append(candidates, action)
 		}
 	}
@@ -310,14 +337,13 @@ func resolveOffense(attacker CombatAction, defender CombatAction) (damage int, r
 		}
 		return damage, refund, 0, []string{fmt.Sprintf("%s through block for %d", attacker.Label, damage)}
 	case actionParry:
-		if attackValue > defender.Value {
-			damage = attackValue - defender.Value
-			refund = damage
-			penalty = defender.Value
-			return damage, refund, penalty, []string{fmt.Sprintf("%s beaten parry: %d, penalty %d", attacker.Label, damage, penalty)}
+		if defender.Value >= attackValue {
+			penalty = attackValue
+			return 0, 0, penalty, []string{fmt.Sprintf("%s reflected by parry for %d", attacker.Label, penalty)}
 		}
-		penalty = defender.Value
-		return 0, 0, penalty, []string{fmt.Sprintf("%s parried and countered (%d)", attacker.Label, penalty)}
+		damage = attackValue
+		refund = damage
+		return damage, refund, 0, []string{fmt.Sprintf("%s beat parry and landed for %d", attacker.Label, damage)}
 	default:
 		damage = attackValue
 		refund = damage
@@ -343,6 +369,7 @@ func CheckCombatEnd(state *GameState) (bool, string) {
 
 	if state.Attention <= 0 {
 		state.Phase = "game_over"
+		state.Outcome = "defeat"
 		state.Combat = nil
 		return true, "lose"
 	}
@@ -357,10 +384,12 @@ func CheckCombatEnd(state *GameState) (bool, string) {
 	state.Progress.CombatsWon++
 	state.Score += 20
 	state.Phase = "combat_resolved"
+	state.Outcome = ""
 	state.Reward = buildRewardState(combat.Enemy, state, NewCombatRNG())
 	state.Combat.Turn = "resolved"
 	state.Combat.TurnPhase = "resolved"
 	state.Combat.PendingEnemyAction = nil
+	state.Combat.PendingPlayerAction = nil
 	return true, "win"
 }
 
@@ -375,6 +404,38 @@ func advanceStatusEffects(state *GameState) {
 		}
 		state.Combat.DisabledExploits[exploitID] = turns - 1
 	}
+}
+
+func advanceCooldowns(cooldowns map[string]int) {
+	for key, turns := range cooldowns {
+		if turns <= 1 {
+			delete(cooldowns, key)
+			continue
+		}
+		cooldowns[key] = turns - 1
+	}
+}
+
+func applyActionCooldown(cooldowns map[string]int, action CombatAction) {
+	key := cooldownKeyForAction(action)
+	if key == "" {
+		return
+	}
+	if action.Type == actionExploit {
+		cooldowns[key] = 2
+		return
+	}
+	cooldowns[key] = 1
+}
+
+func cooldownKeyForAction(action CombatAction) string {
+	if action.Type == actionExploit {
+		if action.ExploitID == "" {
+			return "enemy_exploit"
+		}
+		return action.ExploitID
+	}
+	return action.Type
 }
 
 func findEquippedExploit(state *GameState, exploitID string) *Exploit {

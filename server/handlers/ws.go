@@ -92,6 +92,44 @@ func HandleWebSocket(c *gin.Context) {
 				log.Printf("ws state update send failed: %v", err)
 				return
 			}
+		case "ADVANCE_FEED":
+			state, err := session.AdvanceFeed(incoming.PostID)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send advance error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws advance state update send failed: %v", err)
+				return
+			}
+		case "LIKE_POST":
+			state, err := session.LikeFeedPost(incoming.PostID)
+			if err != nil {
+				if writeErr := conn.WriteJSON(models.ErrorMessage{
+					Type:  "ERROR",
+					Error: err.Error(),
+				}); writeErr != nil {
+					log.Printf("ws send like error message failed: %v", writeErr)
+					return
+				}
+				continue
+			}
+			if err := conn.WriteJSON(models.StateUpdate{
+				Type:  "STATE_UPDATE",
+				State: state,
+			}); err != nil {
+				log.Printf("ws like state update send failed: %v", err)
+				return
+			}
 		case "SELECT_REWARD_EXPLOIT":
 			state, err := session.SelectRewardExploit(incoming.ExploitID)
 			if err != nil {
@@ -177,7 +215,7 @@ func HandleWebSocket(c *gin.Context) {
 			if err := conn.WriteJSON(models.CombatPhaseMessage{
 				Type:    "COMBAT_PHASE",
 				Phase:   "enemy_thinking",
-				DelayMs: 1200,
+				DelayMs: 650,
 			}); err != nil {
 				log.Printf("ws combat phase send failed: %v", err)
 				return
@@ -195,27 +233,39 @@ func HandleWebSocket(c *gin.Context) {
 				continue
 			}
 
-			time.Sleep(1200 * time.Millisecond)
+			time.Sleep(650 * time.Millisecond)
 
 			if err := conn.WriteJSON(models.CombatPhaseMessage{
 				Type:        "COMBAT_PHASE",
 				Phase:       "enemy_reveal",
 				EnemyAction: enemyAction,
-				DelayMs:     450,
+				DelayMs:     260,
 			}); err != nil {
 				log.Printf("ws enemy reveal send failed: %v", err)
 				return
 			}
 
-			time.Sleep(450 * time.Millisecond)
+			time.Sleep(260 * time.Millisecond)
 
 			if err := conn.WriteJSON(models.CombatPhaseMessage{
 				Type:  "COMBAT_PHASE",
-				Phase: "resolving",
+				Phase: "resolving_costs",
 			}); err != nil {
 				log.Printf("ws resolving phase send failed: %v", err)
 				return
 			}
+
+			time.Sleep(220 * time.Millisecond)
+
+			if err := conn.WriteJSON(models.CombatPhaseMessage{
+				Type:  "COMBAT_PHASE",
+				Phase: "resolving_hits",
+			}); err != nil {
+				log.Printf("ws resolving hits phase send failed: %v", err)
+				return
+			}
+
+			time.Sleep(220 * time.Millisecond)
 
 			turn, combatResult, state, err := session.ResolveCombatAction(playerAction, enemyAction)
 			if err != nil {

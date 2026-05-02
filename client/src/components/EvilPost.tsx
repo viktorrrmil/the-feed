@@ -4,9 +4,10 @@ import type { FeedPost } from '../store/gameReducer'
 interface EvilPostProps {
   post: FeedPost
   isActive?: boolean
+  onLike?: (postId: string) => void
 }
 
-function EvilPost({ post, isActive = true }: EvilPostProps) {
+function EvilPost({ post, isActive = true, onLike }: EvilPostProps) {
   const [liked, setLiked] = useState(false)
   const [likes, setLikes] = useState(post.content.likes ?? 0)
 
@@ -18,6 +19,7 @@ function EvilPost({ post, isActive = true }: EvilPostProps) {
       }
 
       setLikes((prevLikes) => prevLikes + 1)
+      onLike?.(post.id)
       return true
     })
   }

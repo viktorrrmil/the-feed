@@ -1,5 +1,5 @@
 import type { SocketStatus } from '../store/gameReducer'
-import ASCIIText from '../components/ASCIIText'
+import ASCIIText from '../components/ASCIIText.jsx'
 
 interface StartScreenProps {
     onStart: () => void

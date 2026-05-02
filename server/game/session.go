@@ -14,6 +14,14 @@ type Session struct {
 	mu    sync.RWMutex
 	feed  *FeedGenerator
 	rng   *rand.Rand
+	posts map[string]*feedPostState
+}
+
+type feedPostState struct {
+	post      *FeedPost
+	liked     bool
+	advanced  bool
+	atAwarded bool
 }
 
 var sessionStore = struct {
@@ -34,6 +42,7 @@ func CreateSession() (*Session, error) {
 		State: NewGameState(sessionID),
 		feed:  NewFeedGenerator(),
 		rng:   NewCombatRNG(),
+		posts: map[string]*feedPostState{},
 	}
 
 	sessionStore.Lock()
@@ -66,6 +75,7 @@ func (s *Session) ScrollFeed() (*FeedPost, *Enemy, *GameState, error) {
 	}
 
 	post := s.feed.NextPost(s.State)
+	s.posts[post.ID] = &feedPostState{post: cloneFeedPost(post)}
 	var combatEnemy *Enemy
 	if post.Type == PostTypeNormal {
 		s.State.Score++
@@ -78,6 +88,57 @@ func (s *Session) ScrollFeed() (*FeedPost, *Enemy, *GameState, error) {
 	}
 
 	return post, combatEnemy, cloneState(s.State), nil
+}
+
+func (s *Session) AdvanceFeed(postID string) (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State.Phase != "feed" {
+		return nil, fmt.Errorf("cannot advance feed in phase %s", s.State.Phase)
+	}
+
+	postState, ok := s.posts[postID]
+	if !ok || postState.post == nil {
+		return cloneState(s.State), nil
+	}
+
+	if postState.advanced {
+		return cloneState(s.State), nil
+	}
+
+	postState.advanced = true
+	if postState.post.Type == PostTypeNormal && postState.post.Content.IsOff && !postState.post.Content.IsTrap && !postState.liked && !postState.atAwarded {
+		s.State.Attention = min(s.State.Attention+3, s.State.MaxAttention)
+		postState.atAwarded = true
+	}
+
+	return cloneState(s.State), nil
+}
+
+func (s *Session) LikeFeedPost(postID string) (*GameState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State.Phase != "feed" {
+		return nil, fmt.Errorf("cannot like post in phase %s", s.State.Phase)
+	}
+
+	postState, ok := s.posts[postID]
+	if !ok || postState.post == nil {
+		return cloneState(s.State), nil
+	}
+	if postState.liked {
+		return cloneState(s.State), nil
+	}
+
+	postState.liked = true
+	if postState.post.Type == PostTypeNormal && !postState.post.Content.IsOff && !postState.atAwarded {
+		s.State.Attention = min(s.State.Attention+2, s.State.MaxAttention)
+		postState.atAwarded = true
+	}
+
+	return cloneState(s.State), nil
 }
 
 func (s *Session) HandleCombatAction(action PlayerAction) (*TurnResult, string, *GameState, error) {
@@ -299,10 +360,16 @@ func cloneState(state *GameState) *GameState {
 		combatCloned.EnemyDebuffs = cloneIntMap(state.Combat.EnemyDebuffs)
 		combatCloned.PlayerDebuffs = cloneIntMap(state.Combat.PlayerDebuffs)
 		combatCloned.DisabledExploits = cloneIntMap(state.Combat.DisabledExploits)
+		combatCloned.PlayerCooldowns = cloneIntMap(state.Combat.PlayerCooldowns)
+		combatCloned.EnemyCooldowns = cloneIntMap(state.Combat.EnemyCooldowns)
 		combatCloned.Log = append([]TurnResult(nil), state.Combat.Log...)
 		if state.Combat.PendingEnemyAction != nil {
 			pending := *state.Combat.PendingEnemyAction
 			combatCloned.PendingEnemyAction = &pending
+		}
+		if state.Combat.PendingPlayerAction != nil {
+			pending := *state.Combat.PendingPlayerAction
+			combatCloned.PendingPlayerAction = &pending
 		}
 		cloned.Combat = &combatCloned
 	}
@@ -368,6 +435,14 @@ func cloneRewardItems(input []*RewardItem) []*RewardItem {
 		cloned = append(cloned, &entry)
 	}
 	return cloned
+}
+
+func cloneFeedPost(post *FeedPost) *FeedPost {
+	if post == nil {
+		return nil
+	}
+	cloned := *post
+	return &cloned
 }
 
 func generateSessionID() (string, error) {

@@ -3,6 +3,7 @@ package game
 type GameState struct {
 	SessionID       string       `json:"sessionId"`
 	Phase           string       `json:"phase"`
+	Outcome         string       `json:"outcome,omitempty"`
 	Score           int          `json:"score"`
 	Attention       int          `json:"attention"`
 	MaxAttention    int          `json:"maxAttention"`
@@ -41,7 +42,10 @@ type CombatState struct {
 	LastEnemyAction      string         `json:"lastEnemyAction"`
 	LastEnemyActionValue int            `json:"lastEnemyActionValue"`
 	LastEnemyActionCost  int            `json:"lastEnemyActionCost"`
+	PlayerCooldowns      map[string]int `json:"playerCooldowns"`
+	EnemyCooldowns       map[string]int `json:"enemyCooldowns"`
 	PendingEnemyAction   *CombatAction  `json:"pendingEnemyAction,omitempty"`
+	PendingPlayerAction  *CombatAction  `json:"pendingPlayerAction,omitempty"`
 	EnemyDebuffs         map[string]int `json:"enemyDebuffs"`
 	PlayerDebuffs        map[string]int `json:"playerDebuffs"`
 	DisabledExploits     map[string]int `json:"disabledExploits"`

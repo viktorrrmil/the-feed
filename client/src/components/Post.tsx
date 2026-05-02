@@ -3,9 +3,10 @@ import type { FeedPost } from '../store/gameReducer'
 
 interface PostProps {
   post: FeedPost
+  onLike?: (postId: string) => void
 }
 
-function Post({ post }: PostProps) {
+function Post({ post, onLike }: PostProps) {
   const [liked, setLiked] = useState(false)
   const [likes, setLikes] = useState(post.content.likes ?? 0)
 
@@ -17,12 +18,17 @@ function Post({ post }: PostProps) {
       }
 
       setLikes((prevLikes) => prevLikes + 1)
+      onLike?.(post.id)
       return true
     })
   }
 
   return (
-    <article className="post-card post-card-normal">
+    <article
+      className={`post-card post-card-normal ${post.content.isOff ? 'post-card-off' : ''} ${
+        post.content.isTrap ? 'post-card-trap' : ''
+      }`}
+    >
       <header className="post-head">
         <p>{post.content.author ?? 'Unknown'}</p>
         <span>{post.content.handle ?? '@anonymous'}</span>
@@ -36,7 +42,7 @@ function Post({ post }: PostProps) {
         >
           ❤ {likes}
         </button>
-        <span>#{post.id}</span>
+        <span>{post.content.tag || `#${post.id}`}</span>
       </footer>
     </article>
   )

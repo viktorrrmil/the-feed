@@ -19,6 +19,7 @@ function App() {
     createSession,
     scrollFeed,
     advanceFeed,
+    likePost,
     completeCombatEntrance,
     continueAfterCombatSummary,
     sendCombatAction,
@@ -30,6 +31,7 @@ function App() {
     combatSummaryPending,
     combatTurnPhase,
     revealedEnemyAction,
+    pendingPlayerAction,
     selectRewardExploit,
     resolveRewardItem,
     completeRewards,
@@ -54,6 +56,7 @@ function App() {
             score={score}
             onScroll={scrollFeed}
             onAdvance={advanceFeed}
+            onLikePost={likePost}
             onCombatEntranceComplete={completeCombatEntrance}
             onCombatSummaryContinue={continueAfterCombatSummary}
             latestCombatTurn={latestCombatTurn}
@@ -63,6 +66,7 @@ function App() {
             combatSummaryPending={combatSummaryPending}
             combatTurnPhase={combatTurnPhase}
             revealedEnemyAction={revealedEnemyAction}
+            pendingPlayerAction={pendingPlayerAction}
             onCombatAction={sendCombatAction}
             onRewardExploitSelect={selectRewardExploit}
             onRewardItemDecision={resolveRewardItem}
@@ -75,7 +79,14 @@ function App() {
   if (phase === 'game_over') {
     const score =
         gameOverScore ?? (typeof serverState?.score === 'number' ? serverState.score : 0)
-    return <GameOverScreen score={score} onRestart={createSession} />
+    return (
+      <GameOverScreen
+        score={score}
+        outcome={typeof serverState?.outcome === 'string' ? serverState.outcome : 'defeat'}
+        exploitsCollected={serverState?.progress?.exploitsCollected ?? 0}
+        onRestart={createSession}
+      />
+    )
   }
 
   if (menuScreen === 'how-to-play') {

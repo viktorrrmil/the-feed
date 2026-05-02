@@ -26,7 +26,9 @@ body {
   min-height: 100vh;
   font-family: var(--font-ui);
   color: var(--text);
-  background: radial-gradient(circle at top, #161626 0%, #0b0b12 70%);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #15141c 0%, #09090d 100%);
   overflow-x: hidden;
 }
 
@@ -37,14 +39,15 @@ html {
 
 button {
   border: 1px solid var(--panel-border);
-  background: var(--accent);
+  background: #281b21;
   color: var(--text);
   padding: 0.9rem 1.6rem;
   font-size: 1rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 0;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.12s steps(2, end), box-shadow 0.12s steps(2, end);
+  box-shadow: inset 0 0 0 1px #110d13, 0 3px 0 #0c0a0e;
 }
 
 button:disabled {
@@ -54,8 +57,8 @@ button:disabled {
 }
 
 button:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(255, 0, 76, 0.3);
+  transform: translateY(1px);
+  box-shadow: inset 0 0 0 1px #110d13, 0 1px 0 #0c0a0e;
 }
 
 .screen {
@@ -632,6 +635,8 @@ h1 {
   place-items: center;
   padding: 1.4rem;
   background: rgba(8, 6, 12, 0.82);
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
 .reward-panel {
@@ -642,6 +647,17 @@ h1 {
     inset 0 0 0 2px #0f0a0d,
     0 0 18px rgba(255, 150, 83, 0.12);
   padding: 1.4rem;
+  transform: scale(1);
+  transition: transform 260ms ease, opacity 260ms ease;
+}
+
+.reward-overlay-closing {
+  opacity: 0;
+}
+
+.reward-panel-closing {
+  opacity: 0;
+  transform: scale(0.96);
 }
 
 .reward-panel h2,
@@ -1198,6 +1214,22 @@ h1 {
   animation:
     encounter-impact-visibility 84ms steps(1, end) 760ms both,
     encounter-impact-skull-pulse 84ms steps(2, end) 760ms both;
+}
+
+.encounter-enemy-intro {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  color: #fff2bf;
+  font-family: var(--font-retro-game);
+  font-size: clamp(1.3rem, 5vw, 2.8rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow:
+    2px 0 0 rgba(255, 64, 96, 0.9),
+    -2px 0 0 rgba(96, 208, 255, 0.75),
+    0 0 18px rgba(255, 92, 118, 0.38);
+  animation: encounter-enemy-name 920ms steps(4, end) forwards;
 }
 
 .phone-feed::after {
@@ -1860,6 +1892,19 @@ h1 {
   font-size: 0.92rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.battle-action-button-cooldown {
+  border-color: #8e5f60;
+}
+
+.battle-action-cooldown {
+  border: 1px solid #a36d70;
+  background: #3c2024;
+  color: #ffd3cf;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0.16rem 0.26rem;
 }
 
 .battle-end-turn {
@@ -2610,12 +2655,58 @@ h1 {
   }
 }
 
+@keyframes encounter-enemy-name {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.88);
+    filter: blur(6px);
+  }
+  35% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.02);
+    filter: blur(0);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(calc(-50% + 2px), calc(-50% - 1px)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% - 2px), calc(-50% + 1px)) scale(1);
+  }
+}
+
+@keyframes victory-glitch {
+  0%,
+  92%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    text-shadow: 0 0 12px rgba(255, 116, 82, 0.18);
+  }
+  94% {
+    transform: translate3d(1px, 0, 0);
+    text-shadow:
+      2px 0 0 rgba(255, 66, 104, 0.8),
+      -2px 0 0 rgba(100, 212, 255, 0.7);
+  }
+  96% {
+    transform: translate3d(-1px, 0, 0);
+    text-shadow:
+      -2px 0 0 rgba(255, 66, 104, 0.8),
+      2px 0 0 rgba(100, 212, 255, 0.7);
+  }
+}
+
 .game-over-screen {
   background: radial-gradient(circle at top, rgba(97, 18, 35, 0.5), transparent 60%), #09070c;
 }
 
 .game-over-panel {
   text-align: center;
+}
+
+.game-over-panel-victory h1 {
+  animation: victory-glitch 2.8s steps(2, end) infinite;
 }
 
 @media (max-width: 900px) {
@@ -2708,16 +2799,31 @@ h1 {
 }
 
 .post-card {
-  border-radius: 20px;
-  border: 1px solid #3d3350;
+  border-radius: 0;
+  border: 2px solid #3d3350;
   padding: 1.1rem 1rem;
   min-height: 100%;
   color: #1b1522;
   background: #f5f0e8;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+    0 6px 0 rgba(0, 0, 0, 0.14);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+.post-card-off {
+  position: relative;
+}
+
+.post-card-off::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(72, 18, 36, 0.04) 0 2px, transparent 2px 10px);
+  mix-blend-mode: multiply;
 }
 
 .post-card-evil {
