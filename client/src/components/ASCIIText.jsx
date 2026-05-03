@@ -184,28 +184,45 @@ class CanvasTxt {
     this.color = color;
 
     this.font = `600 ${this.fontSize}px ${this.fontFamily}`;
+    this._drawX = 16;
+    this._drawY = 16;
   }
 
   resize() {
-    this.context.font = this.font;
-    const metrics = this.context.measureText(this.txt);
+    const ctx = this.context;
+    ctx.font = this.font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
 
-    const textWidth = Math.ceil(metrics.width) + 20;
-    const textHeight = Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 20;
+    const m = ctx.measureText(this.txt);
+    // `width` alone can be narrower than painted glyphs; use bounding box so the last letter is never clipped.
+    const abl = m.actualBoundingBoxLeft ?? 0;
+    const abr = m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width;
+    const abt = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : this.fontSize * 0.72;
+    const abb = m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : this.fontSize * 0.28;
 
-    this.canvas.width = textWidth;
-    this.canvas.height = textHeight;
+    const padX = 28;
+    const padY = 24;
+
+    this._drawX = padX + abl;
+    this._drawY = padY + abt;
+
+    this.canvas.width = Math.max(1, Math.ceil(padX * 2 + abl + abr));
+    this.canvas.height = Math.max(1, Math.ceil(padY * 2 + abt + abb));
+
+    ctx.font = this.font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
   }
 
   render() {
-    this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.context.fillStyle = this.color;
-    this.context.font = this.font;
-
-    const metrics = this.context.measureText(this.txt);
-    const yPos = 10 + metrics.actualBoundingBoxAscent;
-
-    this.context.fillText(this.txt, 10, yPos);
+    const ctx = this.context;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillStyle = this.color;
+    ctx.font = this.font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(this.txt, this._drawX, this._drawY);
   }
 
   get width() {
@@ -248,13 +265,23 @@ class CanvAscii {
   }
 
   async init() {
+    const textFace = `600 ${this.textFontSize}px "IBM Plex Mono"`;
+    const asciiFace = `500 ${this.asciiFontSize}px "IBM Plex Mono"`;
     try {
-      await document.fonts.load('600 200px "IBM Plex Mono"');
-      await document.fonts.load('500 12px "IBM Plex Mono"');
+      await Promise.all([document.fonts.load(textFace), document.fonts.load(asciiFace)]);
     } catch (e) {
       // Font loading failed, continue with fallback
     }
     await document.fonts.ready;
+
+    const fontsUsable = () => document.fonts.check(textFace) && document.fonts.check(asciiFace);
+    for (let i = 0; i < 120; i++) {
+      if (fontsUsable()) break;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    // Let layout / font substitution settle before measuring glyph bounds (avoids "The Fee" clip on first paint).
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => requestAnimationFrame(r));
 
     this.setMesh();
     this.setRenderer();
@@ -263,9 +290,11 @@ class CanvAscii {
   setMesh() {
     this.textCanvas = new CanvasTxt(this.textString, {
       fontSize: this.textFontSize,
-      fontFamily: 'IBM Plex Mono',
+      fontFamily: '"IBM Plex Mono", monospace',
       color: this.textColor
     });
+    this.textCanvas.resize();
+    this.textCanvas.render();
     this.textCanvas.resize();
     this.textCanvas.render();
 
@@ -300,7 +329,7 @@ class CanvAscii {
     this.renderer.setClearColor(0x000000, 0);
 
     this.filter = new AsciiFilter(this.renderer, {
-      fontFamily: 'IBM Plex Mono',
+      fontFamily: '"IBM Plex Mono", monospace',
       fontSize: this.asciiFontSize,
       invert: true
     });
@@ -494,7 +523,9 @@ export default function ASCIIText({
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap');
+        .ascii-text-container {
+          overflow: visible;
+        }
 
         .ascii-text-container canvas {
           position: absolute;
@@ -520,10 +551,13 @@ export default function ASCIIText({
           position: absolute;
           left: 0;
           top: 0;
+          overflow: visible;
+          white-space: pre;
           background-image: radial-gradient(circle, #ff6188 0%, #fc9867 50%, #ffd866 100%);
           background-attachment: fixed;
           -webkit-text-fill-color: transparent;
           -webkit-background-clip: text;
+          background-clip: text;
           z-index: 9;
           mix-blend-mode: difference;
         }

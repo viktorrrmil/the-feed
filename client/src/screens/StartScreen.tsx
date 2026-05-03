@@ -1,6 +1,15 @@
 import type { SocketStatus } from '../store/gameReducer'
 import ASCIIText from '../components/ASCIIText.jsx'
 
+/** Full title string for the ASCII logo — must stay 8 code units including trailing "d". */
+const START_LOGO_TITLE = 'The Feed'
+if (import.meta.env.DEV) {
+  const chars = [...START_LOGO_TITLE]
+  if (chars.length !== 8 || chars[7] !== 'd') {
+    console.error('START_LOGO_TITLE must render as "The Feed" (8 chars, last is "d").', START_LOGO_TITLE)
+  }
+}
+
 interface StartScreenProps {
     onStart: () => void
     onHowToPlay: () => void
@@ -24,8 +33,11 @@ function StartScreen({
                 <div className="start-bg-layer start-bg-layer-c" />
             </div>
 
-            <div className="start-logo-wrap" aria-hidden>
-                <ASCIIText text="The Feed" enableWaves={false} asciiFontSize={6} />
+            <div className="start-logo-wrap">
+                <h1 className="start-logo-sr-only">{START_LOGO_TITLE}</h1>
+                <div className="start-logo-ascii" aria-hidden>
+                    <ASCIIText text={START_LOGO_TITLE} enableWaves={false} asciiFontSize={6} />
+                </div>
             </div>
 
             <div className="panel start-panel">

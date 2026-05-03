@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PostMedia from './PostMedia'
 import type { FeedPost } from '../store/gameReducer'
 
 interface PostProps {
@@ -9,6 +10,10 @@ interface PostProps {
 function Post({ post, onLike }: PostProps) {
   const [liked, setLiked] = useState(false)
   const [likes, setLikes] = useState(post.content.likes ?? 0)
+  const isAnomaly =
+    Boolean(post.content.isTrap) ||
+    Boolean(post.content.isOff) ||
+    (post.content.glitchLevel ?? 0) > 0
 
   const handleLike = () => {
     setLiked((prevLiked) => {
@@ -27,12 +32,15 @@ function Post({ post, onLike }: PostProps) {
     <article
       className={`post-card post-card-normal ${post.content.isOff ? 'post-card-off' : ''} ${
         post.content.isTrap ? 'post-card-trap' : ''
-      }`}
+      } ${isAnomaly ? 'post-card-anomaly' : ''}`}
     >
       <header className="post-head">
         <p>{post.content.author ?? 'Unknown'}</p>
         <span>{post.content.handle ?? '@anonymous'}</span>
       </header>
+      <div className="post-media-wrap">
+        <PostMedia postId={post.id} />
+      </div>
       <p className="post-message">{post.content.message ?? '...'}</p>
       <footer className="post-meta">
         <button

@@ -17,6 +17,7 @@ function App() {
     isCreatingSession,
     error,
     createSession,
+    returnToTitle,
     scrollFeed,
     advanceFeed,
     likePost,
@@ -85,6 +86,7 @@ function App() {
         outcome={typeof serverState?.outcome === 'string' ? serverState.outcome : 'defeat'}
         exploitsCollected={serverState?.progress?.exploitsCollected ?? 0}
         onRestart={createSession}
+        onMainMenu={returnToTitle}
       />
     )
   }

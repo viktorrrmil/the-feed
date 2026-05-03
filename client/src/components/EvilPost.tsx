@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PostMedia from './PostMedia'
 import type { FeedPost } from '../store/gameReducer'
 
 interface EvilPostProps {
@@ -10,6 +11,10 @@ interface EvilPostProps {
 function EvilPost({ post, isActive = true, onLike }: EvilPostProps) {
   const [liked, setLiked] = useState(false)
   const [likes, setLikes] = useState(post.content.likes ?? 0)
+  const isAnomaly =
+    Boolean(post.content.isTrap) ||
+    Boolean(post.content.isOff) ||
+    (post.content.glitchLevel ?? 0) > 0
 
   const handleLike = () => {
     setLiked((prevLiked) => {
@@ -25,11 +30,19 @@ function EvilPost({ post, isActive = true, onLike }: EvilPostProps) {
   }
 
   return (
-    <article className={`post-card post-card-evil ${isActive ? 'post-card-evil-active' : ''}`} role="alert">
+    <article
+      className={`post-card post-card-evil ${isActive ? 'post-card-evil-active' : ''} ${
+        isAnomaly ? 'post-card-anomaly' : ''
+      }`}
+      role="alert"
+    >
       <header className="post-head">
         <p>{post.content.author ?? 'Corrupted Broadcast'}</p>
         <span>{post.content.handle ?? '@void_signal'}</span>
       </header>
+      <div className="post-media-wrap post-media-wrap-evil">
+        <PostMedia postId={post.id} />
+      </div>
       <p className="post-message">{post.content.message ?? 'Signal lost.'}</p>
       <footer className="post-meta">
         <button

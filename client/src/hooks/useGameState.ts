@@ -145,6 +145,10 @@ export const useGameState = () => {
     [sendMessage],
   )
 
+  const returnToTitle = useCallback(() => {
+    dispatch({ type: 'RETURN_TO_TITLE' })
+  }, [])
+
   const createSession = useCallback(async () => {
     dispatch({ type: 'SESSION_CREATE_REQUEST' })
 
@@ -169,6 +173,7 @@ export const useGameState = () => {
     socketStatus: state.socketStatus,
     sendMessage,
     createSession,
+    returnToTitle,
     scrollFeed,
     advanceFeed,
     likePost,

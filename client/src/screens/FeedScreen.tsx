@@ -1453,9 +1453,14 @@ function FeedScreen({
               {currentPost ? (
                 <div className="feed-page feed-page-current" style={currentStyle}>
                   {currentPost.type === 'evil' ? (
-                    <EvilPost post={currentPost} isActive onLike={handleLikeCurrentPost} />
+                    <EvilPost
+                      key={currentPost.id}
+                      post={currentPost}
+                      isActive
+                      onLike={handleLikeCurrentPost}
+                    />
                   ) : (
-                    <Post post={currentPost} onLike={handleLikeCurrentPost} />
+                    <Post key={currentPost.id} post={currentPost} onLike={handleLikeCurrentPost} />
                   )}
                 </div>
               ) : null}
@@ -1463,9 +1468,14 @@ function FeedScreen({
               {nextPost ? (
                 <div className="feed-page feed-page-next" style={nextStyle}>
                   {nextPost.type === 'evil' ? (
-                    <EvilPost post={nextPost} isActive={false} onLike={handleLikeCurrentPost} />
+                    <EvilPost
+                      key={nextPost.id}
+                      post={nextPost}
+                      isActive={false}
+                      onLike={handleLikeCurrentPost}
+                    />
                   ) : (
-                    <Post post={nextPost} onLike={handleLikeCurrentPost} />
+                    <Post key={nextPost.id} post={nextPost} onLike={handleLikeCurrentPost} />
                   )}
                 </div>
               ) : null}
@@ -1846,7 +1856,15 @@ function FeedScreen({
                           checked={selectedRewardExploitId === exploit.id}
                           onChange={() => setSelectedRewardExploitId(exploit.id)}
                         />
-                        <span>{exploit.name}</span>
+                        <span className="reward-exploit-option-body">
+                          <span className="reward-exploit-name">{exploit.name}</span>
+                          <span className="reward-exploit-desc">
+                            {exploit.description?.trim() || 'No description on file.'}
+                          </span>
+                          {exploit.effects?.length ? (
+                            <span className="reward-exploit-stats">{formatEffects(exploit.effects)}</span>
+                          ) : null}
+                        </span>
                       </label>
                     ))}
                   </div>

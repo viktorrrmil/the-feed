@@ -212,6 +212,7 @@ type GameAction =
   | { type: 'COMBAT_ACTION_QUEUED'; payload: CombatActionPreview | null }
   | { type: 'SOCKET_STATUS'; payload: SocketStatus }
   | { type: 'SOCKET_MESSAGE'; payload: SocketMessage }
+  | { type: 'RETURN_TO_TITLE' }
 
 export const initialGameState: GameState = {
   phase: 'start',
@@ -309,6 +310,11 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       return {
         ...state,
         socketStatus: action.payload,
+      }
+    case 'RETURN_TO_TITLE':
+      return {
+        ...initialGameState,
+        socketStatus: state.socketStatus,
       }
     case 'SOCKET_MESSAGE': {
       if (action.payload?.type === 'FEED_POST' && action.payload.post) {
