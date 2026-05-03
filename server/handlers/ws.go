@@ -212,13 +212,12 @@ func HandleWebSocket(c *gin.Context) {
 				ExploitID: incoming.ExploitID,
 			}
 
-			if err := conn.WriteJSON(models.CombatPhaseMessage{
-				Type:    "COMBAT_PHASE",
-				Phase:   "enemy_thinking",
-				DelayMs: 650,
-			}); err != nil {
-				log.Printf("ws combat phase send failed: %v", err)
-				return
+			if playerAction.Action == "forfeit" {
+				state := session.SnapshotState() // or ForceGameOver() if you add it
+				conn.WriteJSON(models.CombatEndMessage{Type: "COMBAT_END", Result: "lose"})
+				conn.WriteJSON(models.GameOverMessage{Type: "GAME_OVER", Score: state.Score})
+				conn.WriteJSON(models.StateUpdate{Type: "STATE_UPDATE", State: state})
+				continue
 			}
 
 			enemyAction, _, err := session.PreviewEnemyAction(playerAction)

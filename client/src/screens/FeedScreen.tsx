@@ -43,7 +43,7 @@ interface FeedScreenProps {
   combatTurnPhase: string | null
   revealedEnemyAction: CombatActionPreview | null
   pendingPlayerAction: CombatActionPreview | null
-  onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit', exploitId?: string) => boolean
+  onCombatAction: (action: 'attack' | 'block' | 'parry' | 'exploit' | 'forfeit', exploitId?: string) => boolean
   onRewardExploitSelect: (exploitId: string) => boolean
   onRewardItemDecision: (itemId: string, decision: 'keep' | 'discard') => boolean
   onRewardComplete: () => boolean
@@ -356,6 +356,18 @@ function FeedScreen({
       Math.round((Math.min(currentAttention, selectedActionCost) / maxAttention) * 100),
     ),
   )
+  const hasEnoughATForAnyAction =
+      currentAttention >= Math.min(...Object.values(ACTION_COSTS), ...availableExploitIds.map((id) => ACTION_COSTS.exploit))
+
+  useEffect(() => {
+    if (isCombatPhase && typeof serverState?.attention === 'number') {
+      if ((currentAttention <= 0 || !hasEnoughATForAnyAction) &&
+          !isEncounterActive && !isPostCombatSummaryActive && !isReturnTransitionActive) {
+        onCombatAction('forfeit')
+      }
+    }
+  }, [serverState?.attention, currentAttention, hasEnoughATForAnyAction, isCombatPhase, isEncounterActive, isPostCombatSummaryActive, isReturnTransitionActive, onCombatAction])
+
   const canUseExploitAction =
     Boolean(effectiveSelectedExploitId) &&
     (effectiveSelectedExploitId ? (disabledExploits[effectiveSelectedExploitId] ?? 0) === 0 : false) &&
@@ -982,6 +994,7 @@ function FeedScreen({
       historyIndex: index,
     })
   }, [])
+
   const handleHoverClear = useCallback(() => {
     setHoverCloud(null)
   }, [])

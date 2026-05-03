@@ -41,14 +41,11 @@ function GameOverScreen({
         </dl>
         <div className="game-over-actions">
           {isVictory ? (
-            <button type="button" className="game-over-btn game-over-btn-primary" onClick={onRestart}>
-              Play Again
+            <button type="button" className="game-over-btn game-over-btn-primary" onClick={onMainMenu}>
+              Main Menu
             </button>
           ) : (
             <>
-              <button type="button" className="game-over-btn game-over-btn-primary" onClick={onRestart}>
-                Retry
-              </button>
               <button type="button" className="game-over-btn game-over-btn-secondary" onClick={onMainMenu}>
                 Main Menu
               </button>
